@@ -332,6 +332,8 @@ pub(crate) fn ball_movement(
             }
         }
 
+        let mut new_velocity = ball_velocity.0;
+
         // Check for brick collision
         for (brick_entity, brick_transform, brick_sprite) in &brick_query {
             let brick_translation = &brick_transform.translation;
@@ -362,13 +364,14 @@ pub(crate) fn ball_movement(
 
                 if left_diff.min(right_diff) < top_diff.min(bottom_diff) {
                     // Hit the brick from the left or right
-                    ball_velocity.x = -ball_velocity.x;
+                    new_velocity.x = -ball_velocity.x;
                 } else {
                     // Hit the brick from the top or bottom
-                    ball_velocity.y = -ball_velocity.y;
+                    new_velocity.y = -ball_velocity.y;
                 }
             }
         }
+        ball_velocity.0 = new_velocity;
     }
 }
 
