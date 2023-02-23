@@ -30,7 +30,7 @@ impl Default for BreakoutConfig {
             paddle_size: [40., 10.],
             paddle_speed: 10.,
             angle_multiplier: 0.5,
-            serve_speed: 2.,
+            serve_speed: 0.5,
             num_bricks: [14, 8],
             bricks_top_offset: 50.,
             brick_height: 10.,

@@ -60,48 +60,38 @@ pub(crate) struct LocalPlugin;
 impl Plugin for LocalPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(CursorPos(Vec3::ZERO));
+        app.add_system(
+            update_cursor_pos
+                .run_in_state(GameState::Ingame)
+                .before(GameloopStage::Input),
+        )
+        .add_system(
+            mouse_input
+                .run_in_state(GameState::Ingame)
+                .label(GameloopStage::Input),
+        )
+        .add_system(
+            paddle_movement
+                .run_in_state(GameState::Ingame)
+                .after(GameloopStage::Input)
+                .label(GameloopStage::PaddleMovement),
+        )
+        .add_system(
+            serve
+                .run_in_state(GameState::Ingame)
+                .run_in_state(BreakoutState::Serve)
+                .after(GameloopStage::PaddleMovement)
+                .label(GameloopStage::Serve),
+        );
 
         let timestep_label = &"fixed_timestep";
-        app.add_fixed_timestep(Duration::from_millis(4), timestep_label)
-            .add_fixed_timestep_system(
-                timestep_label,
-                0,
-                update_cursor_pos
-                    .run_in_state(GameState::Ingame)
-                    .before(GameloopStage::Input),
-            )
-            .add_fixed_timestep_system(
-                timestep_label,
-                0,
-                mouse_input
-                    .run_in_state(GameState::Ingame)
-                    .label(GameloopStage::Input),
-            )
-            .add_fixed_timestep_system(
-                timestep_label,
-                0,
-                paddle_movement
-                    .run_in_state(GameState::Ingame)
-                    .after(GameloopStage::Input)
-                    .label(GameloopStage::PaddleMovement),
-            )
-            .add_fixed_timestep_system(
-                timestep_label,
-                0,
-                serve
-                    .run_in_state(GameState::Ingame)
-                    .run_in_state(BreakoutState::Serve)
-                    .after(GameloopStage::PaddleMovement)
-                    .label(GameloopStage::Serve),
-            )
+        app.add_fixed_timestep(Duration::from_millis(1), timestep_label)
             .add_fixed_timestep_system(
                 timestep_label,
                 0,
                 ball_movement
                     .run_in_state(GameState::Ingame)
-                    .run_in_state(BreakoutState::Playing)
-                    .after(GameloopStage::PaddleMovement)
-                    .label(GameloopStage::BallMovement),
+                    .run_in_state(BreakoutState::Playing),
             );
     }
 }
