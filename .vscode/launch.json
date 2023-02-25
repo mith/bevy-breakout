@@ -12,7 +12,8 @@
                 "args": [
                     "build",
                     "--bin=breakout",
-                    "--package=breakout"
+                    "--package=breakout",
+                    "--features=inspector"
                 ],
                 "filter": {
                     "name": "breakout",

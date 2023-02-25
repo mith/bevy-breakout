@@ -4,7 +4,9 @@ use bevy::prelude::*;
 
 use iyes_loopless::prelude::*;
 
-use crate::types::GameState;
+use crate::{types::GameState, util::despawn_with};
+
+const FONT_PATH: &str = "fonts/PublicPixel-z84yD.ttf";
 
 #[derive(Resource, Reflect)]
 #[reflect(Resource)]
@@ -15,6 +17,7 @@ pub(crate) struct BreakoutConfig {
     pub(crate) paddle_speed: f32,
     pub(crate) angle_multiplier: f32,
     pub(crate) serve_speed: f32,
+    pub(crate) serve_offset: f32,
     pub(crate) num_bricks: [usize; 2],
     pub(crate) bricks_top_offset: f32,
     pub(crate) brick_height: f32,
@@ -31,6 +34,7 @@ impl Default for BreakoutConfig {
             paddle_speed: 10.,
             angle_multiplier: 0.5,
             serve_speed: 0.5,
+            serve_offset: 20.,
             num_bricks: [14, 8],
             bricks_top_offset: 50.,
             brick_height: 10.,
@@ -46,12 +50,15 @@ pub(crate) enum GameloopStage {
     PaddleMovement,
     Serve,
     BallMovement,
+    Scoring,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum BreakoutState {
     Serve,
     Playing,
+    GameOver,
+    Start,
 }
 
 #[derive(Component)]
@@ -67,7 +74,9 @@ pub(crate) struct Ball;
 pub(crate) struct Velocity(pub(crate) Vec2);
 
 #[derive(Component)]
-pub(crate) struct Brick;
+pub(crate) struct Brick {
+    pub(crate) points: u32,
+}
 
 fn calculate_court_scale(window: &Window, config: &BreakoutConfig) -> f32 {
     let height_ratio = window.height() / config.court_size[1];
@@ -93,14 +102,102 @@ pub(crate) fn setup_camera(
 
 pub(crate) fn adjust_camera_scale(
     mut query: Query<&mut OrthographicProjection, With<Camera>>,
+    mut ui_scale: ResMut<UiScale>,
     config: Res<BreakoutConfig>,
     windows: Res<Windows>,
 ) {
     let window = windows.primary();
 
+    let current_scale = calculate_court_scale(window, &config);
     for mut projection in &mut query {
-        projection.scale = calculate_court_scale(window, &config);
+        projection.scale = current_scale;
     }
+
+    ui_scale.scale = 1. / current_scale as f64;
+}
+
+#[derive(Component)]
+pub(crate) struct Counters;
+
+#[derive(Component)]
+pub(crate) struct LivesCounter;
+
+#[derive(Component)]
+pub(crate) struct ScoreCounter;
+
+pub(crate) fn setup_counters(
+    mut commands: Commands,
+    config: Res<BreakoutConfig>,
+    asset_server: Res<AssetServer>,
+    lives: Res<Lives>,
+    score: Res<Score>,
+) {
+    let font = asset_server.load(FONT_PATH);
+    let style = TextStyle {
+        font,
+        font_size: 15.,
+        color: Color::WHITE,
+    };
+    let counter_offset = 15.;
+
+    commands
+        .spawn((
+            Counters,
+            NodeBundle {
+                style: Style {
+                    size: Size::new(Val::Percent(100.), Val::Auto),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::FlexStart,
+                    ..Default::default()
+                },
+
+                ..Default::default()
+            },
+        ))
+        .with_children(|parent| {
+            parent
+                .spawn(NodeBundle {
+                    style: Style {
+                        size: Size::new(Val::Px(config.court_size[0]), Val::Auto),
+                        justify_content: JustifyContent::SpaceBetween,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .add_children(|counter_container| {
+                    counter_container.spawn((
+                        Name::new("LivesCounter"),
+                        LivesCounter,
+                        TextBundle {
+                            text: Text::from_sections([
+                                TextSection::new("lives:", style.clone()),
+                                TextSection::new(format!("{}", lives.0), style.clone()),
+                            ]),
+                            style: Style {
+                                margin: UiRect::all(Val::Px(counter_offset)),
+                                ..Default::default()
+                            },
+                            ..default()
+                        },
+                    ));
+
+                    counter_container.spawn((
+                        Name::new("ScoreCounter"),
+                        ScoreCounter,
+                        TextBundle {
+                            text: Text::from_sections([
+                                TextSection::new("score:", style.clone()),
+                                TextSection::new(format!("{}", score.0), style),
+                            ]),
+                            style: Style {
+                                margin: UiRect::all(Val::Px(counter_offset)),
+                                ..Default::default()
+                            },
+                            ..default()
+                        },
+                    ));
+                })
+        });
 }
 
 pub(crate) fn setup_court(mut commands: Commands, config: Res<BreakoutConfig>) {
@@ -118,6 +215,7 @@ pub(crate) fn setup_court(mut commands: Commands, config: Res<BreakoutConfig>) {
                     )),
                     ..default()
                 },
+                transform: Transform::from_translation(Vec3::new(0., -20., 0.)),
                 ..default()
             },
         ))
@@ -127,10 +225,13 @@ pub(crate) fn setup_court(mut commands: Commands, config: Res<BreakoutConfig>) {
                 Court,
                 Name::new("Court"),
                 SpriteBundle {
-                    transform: Transform::from_translation(Vec3::new(0., 0., 1.)),
+                    transform: Transform::from_translation(Vec3::new(0., -line_width, 1.)),
                     sprite: Sprite {
                         color: Color::BLACK,
-                        custom_size: Some(Vec2::from_array(config.court_size)),
+                        custom_size: Some(Vec2::new(
+                            config.court_size[0],
+                            config.court_size[1] + line_width * 2.,
+                        )),
                         ..default()
                     },
                     ..default()
@@ -155,18 +256,61 @@ pub(crate) fn setup_court(mut commands: Commands, config: Res<BreakoutConfig>) {
                     ..default()
                 },
             ));
+        });
+}
 
-            // Spawn bricks
-            let brick_size_with_padding = [
-                config.court_size[0] / config.num_bricks[0] as f32,
-                config.brick_height,
-            ];
+fn spawn_ball(
+    mut commands: Commands,
+    config: Res<BreakoutConfig>,
+    court_query: Query<Entity, With<Court>>,
+    paddle_query: Query<&Transform, With<Paddle>>,
+) {
+    let court = court_query.single();
+    let paddle_translation = paddle_query.single().translation;
+    commands.entity(court).add_children(|parent| {
+        // Spawn ball
+        parent.spawn((
+            Ball,
+            Name::new("Ball"),
+            Velocity::default(),
+            SpriteBundle {
+                transform: Transform::from_translation(Vec3::new(
+                    paddle_translation.x,
+                    paddle_translation.y - config.serve_offset,
+                    2.,
+                )),
+                sprite: Sprite {
+                    color: Color::WHITE,
+                    custom_size: Some(Vec2::new(config.ball_size, config.ball_size)),
+                    ..default()
+                },
+                ..default()
+            },
+        ));
+    });
+}
 
-            let brick_colors = [Color::RED, Color::ORANGE, Color::GREEN, Color::YELLOW];
-            for x in 0..config.num_bricks[0] {
-                for y in 0..config.num_bricks[1] {
+fn spawn_bricks(
+    mut commands: Commands,
+    config: Res<BreakoutConfig>,
+    court_query: Query<Entity, With<Court>>,
+) {
+    // Spawn bricks
+    let brick_size_with_padding = [
+        config.court_size[0] / config.num_bricks[0] as f32,
+        config.brick_height,
+    ];
+
+    let court = court_query.single();
+    commands.entity(court).add_children(|parent| {
+        let brick_colors = [Color::RED, Color::ORANGE, Color::GREEN, Color::YELLOW];
+        for x in 0..config.num_bricks[0] {
+            for y in 0..config.num_bricks[1] {
+                {
                     parent.spawn((
-                        Brick,
+                        Brick {
+                            points: (config.num_bricks[1] - y) as u32,
+                        },
                         SpriteBundle {
                             transform: Transform::from_translation(Vec3::new(
                                 -config.court_size[0] / 2.
@@ -192,27 +336,8 @@ pub(crate) fn setup_court(mut commands: Commands, config: Res<BreakoutConfig>) {
                     ));
                 }
             }
-
-            // Spawn ball
-            parent.spawn((
-                Ball,
-                Name::new("Ball"),
-                Velocity::default(),
-                SpriteBundle {
-                    transform: Transform::from_translation(Vec3::new(
-                        0.,
-                        -config.court_size[1] / 2. + 35.,
-                        1.,
-                    )),
-                    sprite: Sprite {
-                        color: Color::WHITE,
-                        custom_size: Some(Vec2::new(config.ball_size, config.ball_size)),
-                        ..default()
-                    },
-                    ..default()
-                },
-            ));
-        });
+        }
+    });
 }
 
 #[derive(Default)]
@@ -234,7 +359,8 @@ pub(crate) fn serve(
     let paddle_transform = paddle_query.single_mut();
     let (mut ball_transform, mut ball_velocity) = ball_query.single_mut();
 
-    ball_transform.translation = paddle_transform.translation + Vec3::new(0., 20., 0.);
+    ball_transform.translation =
+        paddle_transform.translation + Vec3::new(0., config.serve_offset, 2.);
 
     if inputs[0].serve {
         ball_velocity.0 = config.serve_speed * Vec2::new(0., 1.).normalize();
@@ -262,8 +388,13 @@ pub(crate) fn paddle_movement(
     }
 }
 
+pub(crate) struct BrickCollisionEvent {
+    brick_entity: Entity,
+}
+
+pub(crate) struct BottomCollisionEvent;
+
 pub(crate) fn ball_movement(
-    mut commands: Commands,
     config: Res<BreakoutConfig>,
     mut ball_query: Query<
         (&mut Transform, &mut Velocity),
@@ -271,6 +402,8 @@ pub(crate) fn ball_movement(
     >,
     paddle_query: Query<&Transform, With<Paddle>>,
     brick_query: Query<(Entity, &Transform, &Sprite), With<Brick>>,
+    mut brick_collision_events: EventWriter<BrickCollisionEvent>,
+    mut bottom_collision_events: EventWriter<BottomCollisionEvent>,
 ) {
     let half_court_width = config.court_size[0] / 2.;
     let half_court_height = config.court_size[1] / 2.;
@@ -293,8 +426,8 @@ pub(crate) fn ball_movement(
 
         if ball_translation.y < -half_court_height + half_ball_size {
             // Hit the bottom of the court
-            // back to serve state
-            commands.insert_resource(NextState(BreakoutState::Serve));
+            // Send a BottomCollisionEvent and reset the ball
+            bottom_collision_events.send(BottomCollisionEvent);
         } else if ball_translation.y > half_court_height - half_ball_size {
             // Hit the top of the court
             ball_translation.y = half_court_height - half_ball_size;
@@ -355,7 +488,7 @@ pub(crate) fn ball_movement(
                 && ball_right > brick_left
             {
                 // Hit the brick
-                commands.entity(brick_entity).despawn_recursive();
+                brick_collision_events.send(BrickCollisionEvent { brick_entity });
 
                 let left_diff = (ball_left - brick_right).abs();
                 let right_diff = (ball_right - brick_left).abs();
@@ -375,6 +508,138 @@ pub(crate) fn ball_movement(
     }
 }
 
+#[derive(Resource)]
+pub(crate) struct Lives(pub u32);
+
+impl Default for Lives {
+    fn default() -> Self {
+        Self(3)
+    }
+}
+
+pub(crate) fn lives(
+    mut commands: Commands,
+    mut lives: ResMut<Lives>,
+    mut bottom_collision_events: EventReader<BottomCollisionEvent>,
+    mut ball_query: Query<(&mut Transform, &mut Velocity), With<Ball>>,
+) {
+    for _ in bottom_collision_events.iter() {
+        lives.0 = lives.0.saturating_sub(1);
+
+        if lives.0 == 0 {
+            commands.insert_resource(NextState(BreakoutState::GameOver));
+        } else {
+            for (mut ball_transform, mut ball_velocity) in &mut ball_query.iter_mut() {
+                ball_transform.translation = Vec3::new(0., 0., 0.);
+                ball_velocity.0 = Vec2::new(0., 0.);
+            }
+            commands.insert_resource(NextState(BreakoutState::Serve));
+        }
+    }
+}
+
+pub(crate) fn update_lives_counter(
+    lives: Res<Lives>,
+    mut lives_counter_query: Query<&mut Text, With<LivesCounter>>,
+) {
+    if lives.is_changed() {
+        let mut lives_counter = lives_counter_query.single_mut();
+        lives_counter.sections[1].value = format!("{}", lives.0);
+    }
+}
+
+#[derive(Component)]
+struct GameOverText;
+
+pub(crate) fn show_game_over(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands
+        .spawn((
+            GameOverText,
+            NodeBundle {
+                style: Style {
+                    size: Size::new(Val::Percent(100.), Val::Percent(100.)),
+                    position_type: PositionType::Absolute,
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    flex_direction: FlexDirection::Column,
+                    ..default()
+                },
+                ..default()
+            },
+        ))
+        .with_children(|parent| {
+            parent.spawn((TextBundle::from_section(
+                "Game over",
+                TextStyle {
+                    font: asset_server.load(FONT_PATH),
+                    font_size: 30.,
+                    color: Color::WHITE,
+                },
+            ),));
+
+            parent.spawn(
+                TextBundle::from_section(
+                    "click to restart",
+                    TextStyle {
+                        font: asset_server.load(FONT_PATH),
+                        font_size: 10.,
+                        color: Color::WHITE,
+                    },
+                )
+                .with_style(Style {
+                    position: UiRect {
+                        top: Val::Px(20.),
+                        ..default()
+                    },
+                    ..default()
+                }),
+            );
+        });
+}
+
+pub(crate) fn reset_lives(mut lives: ResMut<Lives>) {
+    *lives = default();
+}
+
+#[derive(Resource, Default)]
+pub(crate) struct Score(pub u32);
+
+pub(crate) fn reset_score(mut score: ResMut<Score>) {
+    *score = default();
+}
+
+pub(crate) fn brick_collision(
+    mut commands: Commands,
+    mut score: ResMut<Score>,
+    mut brick_collision_events: EventReader<BrickCollisionEvent>,
+    brick_query: Query<&Brick>,
+) {
+    for BrickCollisionEvent { brick_entity } in brick_collision_events.iter() {
+        let brick_points = brick_query.get(*brick_entity).unwrap().points;
+        score.0 += brick_points;
+
+        commands.entity(*brick_entity).despawn_recursive();
+    }
+}
+
+pub(crate) fn update_score_counter(
+    score: Res<Score>,
+    mut score_counter_query: Query<&mut Text, With<ScoreCounter>>,
+) {
+    if score.is_changed() {
+        let mut score_counter = score_counter_query.single_mut();
+        score_counter.sections[1].value = format!("{}", score.0);
+    }
+}
+
+pub(crate) fn restart_game(mut commands: Commands) {
+    commands.insert_resource(NextState(BreakoutState::Start));
+}
+
+pub(crate) fn start_serve(mut commands: Commands) {
+    commands.insert_resource(NextState(BreakoutState::Serve));
+}
+
 pub(crate) struct BreakoutPlugin;
 
 impl Plugin for BreakoutPlugin {
@@ -383,8 +648,23 @@ impl Plugin for BreakoutPlugin {
             .register_type::<BreakoutConfig>()
             .register_type::<Velocity>()
             .insert_resource(PaddleInputs(vec![default()]))
-            .add_loopless_state(BreakoutState::Serve)
+            .init_resource::<Lives>()
+            .init_resource::<Score>()
+            .add_event::<BrickCollisionEvent>()
+            .add_event::<BottomCollisionEvent>()
+            .add_loopless_state(BreakoutState::Start)
             .add_enter_system(GameState::Ingame, setup_court)
+            .add_enter_system(GameState::Ingame, setup_counters)
+            .add_exit_system(GameState::Ingame, despawn_with::<Court>)
+            .add_exit_system(GameState::Ingame, despawn_with::<Counters>)
+            .add_enter_system(BreakoutState::Start, spawn_bricks)
+            .add_exit_system(BreakoutState::Playing, despawn_with::<Ball>)
+            .add_enter_system(BreakoutState::Serve, spawn_ball)
+            .add_enter_system(BreakoutState::GameOver, show_game_over)
+            .add_exit_system(BreakoutState::GameOver, despawn_with::<Brick>)
+            .add_exit_system(BreakoutState::GameOver, despawn_with::<GameOverText>)
+            .add_exit_system(BreakoutState::GameOver, reset_lives)
+            .add_exit_system(BreakoutState::GameOver, reset_score)
             .add_system(adjust_camera_scale.run_in_state(GameState::Ingame));
     }
 }

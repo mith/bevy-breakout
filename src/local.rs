@@ -5,7 +5,9 @@ use iyes_loopless::prelude::*;
 
 use crate::{
     breakout::{
-        ball_movement, paddle_movement, serve, BreakoutState, GameloopStage, Paddle, PaddleInputs,
+        ball_movement, brick_collision, lives, paddle_movement, restart_game, serve, start_serve,
+        update_lives_counter, update_score_counter, BottomCollisionEvent, BreakoutState,
+        BrickCollisionEvent, GameloopStage, Paddle, PaddleInputs,
     },
     types::GameState,
     util::cursor_pos_in_world,
@@ -55,6 +57,13 @@ fn mouse_input(
     }
 }
 
+fn left_mouse_just_button_pressed(mouse_button_input: Res<Input<MouseButton>>) -> bool {
+    mouse_button_input.just_pressed(MouseButton::Left)
+}
+
+fn left_mouse_button_pressed(mouse_button_input: Res<Input<MouseButton>>) -> bool {
+    mouse_button_input.pressed(MouseButton::Left)
+}
 pub(crate) struct LocalPlugin;
 
 impl Plugin for LocalPlugin {
@@ -73,6 +82,7 @@ impl Plugin for LocalPlugin {
         .add_system(
             paddle_movement
                 .run_in_state(GameState::Ingame)
+                .run_not_in_state(BreakoutState::GameOver)
                 .after(GameloopStage::Input)
                 .label(GameloopStage::PaddleMovement),
         )
@@ -82,7 +92,21 @@ impl Plugin for LocalPlugin {
                 .run_in_state(BreakoutState::Serve)
                 .after(GameloopStage::PaddleMovement)
                 .label(GameloopStage::Serve),
-        );
+        )
+        .add_system(
+            restart_game
+                .run_in_state(GameState::Ingame)
+                .run_in_state(BreakoutState::GameOver)
+                .run_if(left_mouse_just_button_pressed),
+        )
+        .add_system(
+            start_serve
+                .run_in_state(GameState::Ingame)
+                .run_in_state(BreakoutState::Start)
+                .run_if_not(left_mouse_button_pressed),
+        )
+        .add_system(update_lives_counter.run_in_state(GameState::Ingame))
+        .add_system(update_score_counter.run_in_state(GameState::Ingame));
 
         let timestep_label = &"fixed_timestep";
         app.add_fixed_timestep(Duration::from_millis(1), timestep_label)
@@ -91,7 +115,28 @@ impl Plugin for LocalPlugin {
                 0,
                 ball_movement
                     .run_in_state(GameState::Ingame)
-                    .run_in_state(BreakoutState::Playing),
+                    .run_in_state(BreakoutState::Playing)
+                    .label(GameloopStage::BallMovement),
+            )
+            .add_fixed_timestep_system(
+                timestep_label,
+                0,
+                lives
+                    .run_in_state(GameState::Ingame)
+                    .run_in_state(BreakoutState::Playing)
+                    .run_on_event::<BottomCollisionEvent>()
+                    .after(GameloopStage::BallMovement)
+                    .label(GameloopStage::Scoring),
+            )
+            .add_fixed_timestep_system(
+                timestep_label,
+                0,
+                brick_collision
+                    .run_in_state(GameState::Ingame)
+                    .run_in_state(BreakoutState::Playing)
+                    .run_on_event::<BrickCollisionEvent>()
+                    .after(GameloopStage::BallMovement)
+                    .label(GameloopStage::Scoring),
             );
     }
 }

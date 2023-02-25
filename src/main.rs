@@ -1,7 +1,9 @@
 use bevy::prelude::*;
+#[cfg(feature = "inspector")]
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use breakout::setup_camera;
 use iyes_loopless::prelude::*;
+
+use breakout::setup_camera;
 use types::GameState;
 
 mod breakout;
@@ -19,12 +21,15 @@ fn main() {
         },
         ..default()
     }))
-    // .add_plugin(WorldInspectorPlugin)
-    .insert_resource(ClearColor(Color::BLACK))
-    .add_startup_system(setup_camera)
-    .add_loopless_state(GameState::Ingame)
-    .add_plugin(breakout::BreakoutPlugin)
-    .add_plugin(local::LocalPlugin);
+    .insert_resource(ClearColor(Color::BLACK));
+
+    #[cfg(feature = "inspector")]
+    app.add_plugin(WorldInspectorPlugin);
+
+    app.add_startup_system(setup_camera)
+        .add_loopless_state(GameState::Ingame)
+        .add_plugin(breakout::BreakoutPlugin)
+        .add_plugin(local::LocalPlugin);
 
     app.run();
 }
