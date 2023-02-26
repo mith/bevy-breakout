@@ -17,6 +17,8 @@ fn main() {
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         window: WindowDescriptor {
             fit_canvas_to_parent: true,
+            #[cfg(not(feature = "inspector"))]
+            cursor_visible: false,
             ..default()
         },
         ..default()

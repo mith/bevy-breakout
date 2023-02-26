@@ -10,25 +10,25 @@ use crate::{
         BreakoutState, BrickCollisionEvent, GameloopStage, Paddle, PaddleInputs,
     },
     types::GameState,
-    util::cursor_pos_in_world,
+    util::cursor_position_in_world,
 };
 
 #[derive(Default, Resource)]
-struct CursorPos(pub(crate) Vec3);
+struct CursorPosition(pub(crate) Vec3);
 
 fn update_cursor_pos(
     windows: Res<Windows>,
     camera_query: Query<(&GlobalTransform, &Camera)>,
     mut cursor_moved_events: EventReader<CursorMoved>,
-    mut cursor_pos: ResMut<CursorPos>,
+    mut cursor_position: ResMut<CursorPosition>,
 ) {
     if let Some(cursor_moved) = cursor_moved_events.iter().last() {
-        for (cam_t, cam) in &camera_query {
-            *cursor_pos = CursorPos(cursor_pos_in_world(
+        for (camera_transform, camera) in &camera_query {
+            *cursor_position = CursorPosition(cursor_position_in_world(
                 &windows,
                 cursor_moved.position,
-                cam_t,
-                cam,
+                camera_transform,
+                camera,
             ))
         }
     }
@@ -38,7 +38,7 @@ fn mouse_input(
     mouse_button_input: Res<Input<MouseButton>>,
     mut inputs: ResMut<PaddleInputs>,
     paddle_query: Query<&GlobalTransform, With<Paddle>>,
-    cursor_pos: Res<CursorPos>,
+    cursor_position: Res<CursorPosition>,
     projection_query: Query<&OrthographicProjection>,
 ) {
     inputs[0].move_direction = 0.;
@@ -51,13 +51,13 @@ fn mouse_input(
     if let Ok(paddle_transform) = paddle_query.get_single() {
         let projection = projection_query.get_single().unwrap();
         let cursor_paddle_diff =
-            (cursor_pos.0.x - paddle_transform.translation().x) * projection.scale;
+            (cursor_position.0.x - paddle_transform.translation().x) * projection.scale;
         let max_move = cursor_paddle_diff.abs().min(4.);
         inputs[0].move_direction = (cursor_paddle_diff * 0.1).clamp(-max_move, max_move);
     }
 }
 
-fn left_mouse_just_button_pressed(mouse_button_input: Res<Input<MouseButton>>) -> bool {
+fn left_mouse_button_just_pressed(mouse_button_input: Res<Input<MouseButton>>) -> bool {
     mouse_button_input.just_pressed(MouseButton::Left)
 }
 
@@ -65,11 +65,15 @@ fn left_mouse_button_pressed(mouse_button_input: Res<Input<MouseButton>>) -> boo
     mouse_button_input.pressed(MouseButton::Left)
 }
 
+fn serve_button_just_pressed(paddle_inputs: Res<PaddleInputs>) -> bool {
+    paddle_inputs[0].serve
+}
+
 pub(crate) struct LocalPlugin;
 
 impl Plugin for LocalPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(CursorPos(Vec3::ZERO))
+        app.insert_resource(CursorPosition(Vec3::ZERO))
             .insert_resource(PaddleInputs(vec![default()]));
         app.add_system(
             update_cursor_pos
@@ -92,6 +96,7 @@ impl Plugin for LocalPlugin {
             serve
                 .run_in_state(GameState::Ingame)
                 .run_in_state(BreakoutState::Serve)
+                .run_if(serve_button_just_pressed)
                 .after(GameloopStage::PaddleMovement)
                 .label(GameloopStage::Serve),
         )
@@ -99,7 +104,7 @@ impl Plugin for LocalPlugin {
             restart_game
                 .run_in_state(GameState::Ingame)
                 .run_in_state(BreakoutState::Finished)
-                .run_if(left_mouse_just_button_pressed),
+                .run_if(left_mouse_button_just_pressed),
         )
         .add_system(
             start_serve

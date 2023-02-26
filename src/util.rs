@@ -1,17 +1,20 @@
 use bevy::prelude::*;
 
 /// Despawn all entities with a given component type
-pub(crate) fn despawn_with<T: Component>(mut commands: Commands, q: Query<Entity, With<T>>) {
-    for e in q.iter() {
-        commands.entity(e).despawn_recursive();
+pub(crate) fn despawn_with<T: Component>(
+    mut commands: Commands,
+    entity_query: Query<Entity, With<T>>,
+) {
+    for target_entity in &entity_query {
+        commands.entity(target_entity).despawn_recursive();
     }
 }
 
-pub(crate) fn cursor_pos_in_world(
+pub(crate) fn cursor_position_in_world(
     windows: &Windows,
-    cursor_pos: Vec2,
-    cam_t: &GlobalTransform,
-    cam: &Camera,
+    cursor_position: Vec2,
+    camera_transform: &GlobalTransform,
+    camera: &Camera,
 ) -> Vec3 {
     let window = windows.primary();
 
@@ -19,7 +22,7 @@ pub(crate) fn cursor_pos_in_world(
 
     // Convert screen position [0..resolution] to ndc [-1..1]
     // (ndc = normalized device coordinates)
-    let ndc_to_world = cam_t.compute_matrix() * cam.projection_matrix().inverse();
-    let ndc = (cursor_pos / window_size) * 2.0 - Vec2::ONE;
+    let ndc_to_world = camera_transform.compute_matrix() * camera.projection_matrix().inverse();
+    let ndc = (cursor_position / window_size) * 2.0 - Vec2::ONE;
     ndc_to_world.project_point3(ndc.extend(0.0))
 }

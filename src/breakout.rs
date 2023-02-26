@@ -15,6 +15,7 @@ pub(crate) struct BreakoutConfig {
     pub(crate) scale: f32,
     pub(crate) paddle_size: [f32; 2],
     pub(crate) paddle_speed: f32,
+    pub(crate) paddle_offset: f32,
     pub(crate) angle_multiplier: f32,
     pub(crate) serve_speed: f32,
     pub(crate) serve_offset: f32,
@@ -32,6 +33,7 @@ impl Default for BreakoutConfig {
             scale: 0.9,
             paddle_size: [40., 10.],
             paddle_speed: 10.,
+            paddle_offset: 20.,
             angle_multiplier: 0.5,
             serve_speed: 0.5,
             serve_offset: 20.,
@@ -53,7 +55,7 @@ pub(crate) enum GameloopStage {
     Scoring,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Resource)]
 pub(crate) enum GameResult {
     Victory,
     GameOver,
@@ -149,15 +151,16 @@ pub(crate) fn setup_counters(
     commands
         .spawn((
             Counters,
+            Name::new("Counters"),
             NodeBundle {
                 style: Style {
                     size: Size::new(Val::Percent(100.), Val::Auto),
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::FlexStart,
-                    ..Default::default()
+                    ..default()
                 },
 
-                ..Default::default()
+                ..default()
             },
         ))
         .with_children(|parent| {
@@ -166,13 +169,13 @@ pub(crate) fn setup_counters(
                     style: Style {
                         size: Size::new(Val::Px(config.court_size[0]), Val::Auto),
                         justify_content: JustifyContent::SpaceBetween,
-                        ..Default::default()
+                        ..default()
                     },
-                    ..Default::default()
+                    ..default()
                 })
                 .add_children(|counter_container| {
                     counter_container.spawn((
-                        Name::new("LivesCounter"),
+                        Name::new("Lives counter"),
                         LivesCounter,
                         TextBundle {
                             text: Text::from_sections([
@@ -181,14 +184,14 @@ pub(crate) fn setup_counters(
                             ]),
                             style: Style {
                                 margin: UiRect::all(Val::Px(counter_offset)),
-                                ..Default::default()
+                                ..default()
                             },
                             ..default()
                         },
                     ));
 
                     counter_container.spawn((
-                        Name::new("ScoreCounter"),
+                        Name::new("Score counter"),
                         ScoreCounter,
                         TextBundle {
                             text: Text::from_sections([
@@ -197,7 +200,7 @@ pub(crate) fn setup_counters(
                             ]),
                             style: Style {
                                 margin: UiRect::all(Val::Px(counter_offset)),
-                                ..Default::default()
+                                ..default()
                             },
                             ..default()
                         },
@@ -207,39 +210,36 @@ pub(crate) fn setup_counters(
 }
 
 pub(crate) fn setup_court(mut commands: Commands, config: Res<BreakoutConfig>) {
-    let line_width = 10.;
+    let line_width = 5.;
     commands
-        // Spawn court line
+        // Spawn court
         .spawn((
-            Name::new("Court line"),
+            Court,
+            Name::new("Court"),
             SpriteBundle {
+                transform: Transform::from_translation(Vec3::new(0., -30., 1.)),
                 sprite: Sprite {
-                    color: Color::WHITE,
-                    custom_size: Some(Vec2::new(
-                        config.court_size[0] + line_width,
-                        config.court_size[1] + line_width,
-                    )),
+                    color: Color::BLACK,
+                    custom_size: Some(Vec2::new(config.court_size[0], config.court_size[1])),
                     ..default()
                 },
-                transform: Transform::from_translation(Vec3::new(0., -20., 0.)),
                 ..default()
             },
         ))
         .with_children(|parent| {
-            // Spawn court
+            // Spawn courtline
             parent.spawn((
-                Court,
-                Name::new("Court"),
+                Name::new("Court line"),
                 SpriteBundle {
-                    transform: Transform::from_translation(Vec3::new(0., -line_width, 1.)),
                     sprite: Sprite {
-                        color: Color::BLACK,
+                        color: Color::WHITE,
                         custom_size: Some(Vec2::new(
-                            config.court_size[0],
-                            config.court_size[1] + line_width * 2.,
+                            config.court_size[0] + line_width * 2.,
+                            config.court_size[1] + line_width,
                         )),
                         ..default()
                     },
+                    transform: Transform::from_translation(Vec3::new(0., line_width * 0.5, -1.)),
                     ..default()
                 },
             ));
@@ -251,8 +251,8 @@ pub(crate) fn setup_court(mut commands: Commands, config: Res<BreakoutConfig>) {
                 SpriteBundle {
                     transform: Transform::from_translation(Vec3::new(
                         0.,
-                        -config.court_size[1] / 2. + 20.,
-                        2.,
+                        -config.court_size[1] / 2. + config.paddle_offset,
+                        1.,
                     )),
                     sprite: Sprite {
                         color: Color::WHITE,
@@ -268,23 +268,17 @@ pub(crate) fn setup_court(mut commands: Commands, config: Res<BreakoutConfig>) {
 fn spawn_ball(
     mut commands: Commands,
     config: Res<BreakoutConfig>,
-    court_query: Query<Entity, With<Court>>,
-    paddle_query: Query<&Transform, With<Paddle>>,
+    paddle_query: Query<Entity, With<Paddle>>,
 ) {
-    let court = court_query.single();
-    let paddle_translation = paddle_query.single().translation;
-    commands.entity(court).add_children(|parent| {
+    let paddle_entity = paddle_query.single();
+    commands.entity(paddle_entity).add_children(|parent| {
         // Spawn ball
         parent.spawn((
             Ball,
             Name::new("Ball"),
             Velocity::default(),
             SpriteBundle {
-                transform: Transform::from_translation(Vec3::new(
-                    paddle_translation.x,
-                    paddle_translation.y - config.serve_offset,
-                    2.,
-                )),
+                transform: Transform::from_translation(Vec3::new(0.0, config.serve_offset, 0.)),
                 sprite: Sprite {
                     color: Color::WHITE,
                     custom_size: Some(Vec2::new(config.ball_size, config.ball_size)),
@@ -317,6 +311,7 @@ fn spawn_bricks(
                         Brick {
                             points: (config.num_bricks[1] - y) as u32,
                         },
+                        Name::new(format!("Brick {}:{}", x, y)),
                         SpriteBundle {
                             transform: Transform::from_translation(Vec3::new(
                                 -config.court_size[0] / 2.
@@ -326,7 +321,7 @@ fn spawn_bricks(
                                     - brick_size_with_padding[1] / 2.
                                     - y as f32 * brick_size_with_padding[1]
                                     - config.bricks_top_offset,
-                                2.,
+                                1.,
                             )),
                             sprite: Sprite {
                                 color: brick_colors[y / 2],
@@ -338,7 +333,6 @@ fn spawn_bricks(
                             },
                             ..default()
                         },
-                        Name::new(format!("Brick {}:{}", x, y)),
                     ));
                 }
             }
@@ -358,20 +352,21 @@ pub(crate) struct PaddleInputs(pub(crate) Vec<PaddleInput>);
 pub(crate) fn serve(
     mut commands: Commands,
     config: Res<BreakoutConfig>,
-    mut ball_query: Query<(&mut Transform, &mut Velocity), (With<Ball>, Without<Paddle>)>,
+    mut ball_query: Query<(Entity, &mut Transform, &mut Velocity), (With<Ball>, Without<Paddle>)>,
+    court_query: Query<Entity, With<Court>>,
     mut paddle_query: Query<&mut Transform, With<Paddle>>,
-    inputs: Res<PaddleInputs>,
 ) {
-    let paddle_transform = paddle_query.single_mut();
-    let (mut ball_transform, mut ball_velocity) = ball_query.single_mut();
-
-    ball_transform.translation =
-        paddle_transform.translation + Vec3::new(0., config.serve_offset, 2.);
-
-    if inputs[0].serve {
-        ball_velocity.0 = config.serve_speed * Vec2::new(0., 1.).normalize();
-        commands.insert_resource(NextState(BreakoutState::Playing));
-    }
+    let (ball_entity, mut ball_transform, mut ball_velocity) = ball_query.single_mut();
+    let paddle_translation = paddle_query.single_mut().translation;
+    let court_entity = court_query.single();
+    commands.entity(court_entity).add_child(ball_entity);
+    ball_velocity.0 = config.serve_speed * Vec2::new(0., 1.).normalize();
+    ball_transform.translation = Vec3::new(
+        paddle_translation.x,
+        paddle_translation.y + config.serve_offset,
+        1.,
+    );
+    commands.insert_resource(NextState(BreakoutState::Playing));
 }
 
 pub(crate) fn paddle_movement(
@@ -401,21 +396,22 @@ pub(crate) struct BrickCollisionEvent {
 pub(crate) struct BottomCollisionEvent;
 
 pub(crate) fn ball_movement(
-    config: Res<BreakoutConfig>,
+    court_query: Query<&Sprite, With<Court>>,
     mut ball_query: Query<
-        (&mut Transform, &mut Velocity),
+        (&mut Transform, &mut Velocity, &Sprite),
         (With<Ball>, Without<Paddle>, Without<Brick>),
     >,
-    paddle_query: Query<&Transform, With<Paddle>>,
+    paddle_query: Query<(&Transform, &Sprite), With<Paddle>>,
     brick_query: Query<(Entity, &Transform, &Sprite), With<Brick>>,
     mut brick_collision_events: EventWriter<BrickCollisionEvent>,
     mut bottom_collision_events: EventWriter<BottomCollisionEvent>,
 ) {
-    let half_court_width = config.court_size[0] / 2.;
-    let half_court_height = config.court_size[1] / 2.;
-    let half_ball_size = config.ball_size / 2.;
+    let court_sprite_size = court_query.single().custom_size.unwrap();
+    let half_court_width = court_sprite_size.x / 2.;
+    let half_court_height = court_sprite_size[1] / 2.;
 
-    for (mut ball_transform, mut ball_velocity) in &mut ball_query {
+    for (mut ball_transform, mut ball_velocity, ball_sprite) in &mut ball_query {
+        let half_ball_size = ball_sprite.custom_size.unwrap().x / 2.;
         let ball_translation = &mut ball_transform.translation;
         ball_translation.x += ball_velocity.x;
         ball_translation.y += ball_velocity.y;
@@ -441,10 +437,11 @@ pub(crate) fn ball_movement(
         }
 
         // Check for paddle collision
-        for paddle_transform in &paddle_query {
+        for (paddle_transform, paddle_sprite) in &paddle_query {
+            let paddle_sprite_size = paddle_sprite.custom_size.unwrap();
             let paddle_translation = &paddle_transform.translation;
-            let paddle_half_width = config.paddle_size[0] / 2.;
-            let paddle_half_height = config.paddle_size[1] / 2.;
+            let paddle_half_width = paddle_sprite_size.x / 2.;
+            let paddle_half_height = paddle_sprite_size.y / 2.;
             let paddle_top = paddle_translation.y + paddle_half_height;
             let paddle_left = paddle_translation.x - paddle_half_width;
             let paddle_right = paddle_translation.x + paddle_half_width;
@@ -533,7 +530,7 @@ pub(crate) fn lives(
         lives.0 = lives.0.saturating_sub(1);
 
         if lives.0 == 0 {
-            commands.insert_resource(NextState(GameResult::GameOver));
+            commands.insert_resource(GameResult::GameOver);
             commands.insert_resource(NextState(BreakoutState::Finished));
         } else {
             for (mut ball_transform, mut ball_velocity) in &mut ball_query.iter_mut() {
@@ -561,7 +558,7 @@ struct FinishedText;
 pub(crate) fn show_game_finished(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    game_result: Res<CurrentState<GameResult>>,
+    game_result: Res<GameResult>,
     score: Res<Score>,
 ) {
     commands
@@ -582,7 +579,7 @@ pub(crate) fn show_game_finished(
         .with_children(|parent| {
             parent.spawn(
                 TextBundle::from_section(
-                    match game_result.0 {
+                    match *game_result {
                         GameResult::Victory => "Victory",
                         GameResult::GameOver => "Game over",
                     },
@@ -666,8 +663,8 @@ pub(crate) fn update_score_counter(
 }
 
 pub(crate) fn check_cleared(mut commands: Commands, brick_query: Query<&Brick>) {
-    if brick_query.iter().next().is_none() {
-        commands.insert_resource(NextState(GameResult::Victory));
+    if brick_query.is_empty() {
+        commands.insert_resource(GameResult::Victory);
         commands.insert_resource(NextState(BreakoutState::Finished));
     }
 }
@@ -678,6 +675,10 @@ pub(crate) fn restart_game(mut commands: Commands) {
 
 pub(crate) fn start_serve(mut commands: Commands) {
     commands.insert_resource(NextState(BreakoutState::Serve));
+}
+
+pub(crate) fn clear_game_result(mut commands: Commands) {
+    commands.remove_resource::<GameResult>();
 }
 
 pub(crate) struct BreakoutPlugin;
@@ -692,7 +693,6 @@ impl Plugin for BreakoutPlugin {
             .add_event::<BrickCollisionEvent>()
             .add_event::<BottomCollisionEvent>()
             .add_loopless_state(BreakoutState::Start)
-            .add_loopless_state(GameResult::GameOver)
             .add_enter_system(GameState::Ingame, setup_court)
             .add_enter_system(GameState::Ingame, setup_counters)
             .add_exit_system(GameState::Ingame, despawn_with::<Court>)
@@ -705,6 +705,7 @@ impl Plugin for BreakoutPlugin {
             .add_exit_system(BreakoutState::Finished, despawn_with::<FinishedText>)
             .add_exit_system(BreakoutState::Finished, reset_lives)
             .add_exit_system(BreakoutState::Finished, reset_score)
+            .add_exit_system(BreakoutState::Finished, clear_game_result)
             .add_system(adjust_camera_scale.run_in_state(GameState::Ingame));
     }
 }
