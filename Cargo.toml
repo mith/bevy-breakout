@@ -7,7 +7,41 @@ edition = "2021"
 [features]
 inspector = ["dep:bevy-inspector-egui", "iyes_loopless/bevy-inspector-egui"]
 
+[profile.small-release]
+inherits = "release"
+lto = "fat"
+opt-level = 'z'
+
 [dependencies]
-bevy = { version="0.9", features=["wayland"] }
 bevy-inspector-egui = { version = "0.17.0", optional = true }
 iyes_loopless = { version = "0.9.1" }
+
+[dependencies.bevy]
+version = "0.9"
+default-features = false
+features = [
+	"bevy_asset",
+	"bevy_winit",
+	"bevy_core_pipeline",
+	"bevy_sprite",
+	"bevy_ui",
+	"bevy_text",
+	"bevy_render",
+	"x11",
+    "wayland",
+	"filesystem_watcher"
+	]
+
+[target.'cfg(target_arch = "wasm32-unknown-unknown")'.dependencies.bevy]
+version = "0.9"
+default-features = false
+features = [
+	"bevy_asset",
+	"bevy_winit",
+	"bevy_core_pipeline",
+	"bevy_sprite",
+	"bevy_ui",
+	"bevy_text",
+	"bevy_render",
+	]
+

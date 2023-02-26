@@ -81,7 +81,7 @@
           craneWasm.buildPackage {
             src = craneLib.cleanCargoSource ./.;
             CARGO_BUILD_TARGET = target;
-            CARGO_PROFILE = "release";
+            CARGO_PROFILE = "small-release";
             inherit nativeBuildInputs;
             doCheck = false;
           };
