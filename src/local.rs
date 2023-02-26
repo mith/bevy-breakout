@@ -5,9 +5,9 @@ use iyes_loopless::prelude::*;
 
 use crate::{
     breakout::{
-        ball_movement, brick_collision, lives, paddle_movement, restart_game, serve, start_serve,
-        update_lives_counter, update_score_counter, BottomCollisionEvent, BreakoutState,
-        BrickCollisionEvent, GameloopStage, Paddle, PaddleInputs,
+        ball_movement, brick_collision, check_cleared, lives, paddle_movement, restart_game, serve,
+        start_serve, update_lives_counter, update_score_counter, BottomCollisionEvent,
+        BreakoutState, BrickCollisionEvent, GameloopStage, Paddle, PaddleInputs,
     },
     types::GameState,
     util::cursor_pos_in_world,
@@ -64,6 +64,7 @@ fn left_mouse_just_button_pressed(mouse_button_input: Res<Input<MouseButton>>) -
 fn left_mouse_button_pressed(mouse_button_input: Res<Input<MouseButton>>) -> bool {
     mouse_button_input.pressed(MouseButton::Left)
 }
+
 pub(crate) struct LocalPlugin;
 
 impl Plugin for LocalPlugin {
@@ -82,7 +83,7 @@ impl Plugin for LocalPlugin {
         .add_system(
             paddle_movement
                 .run_in_state(GameState::Ingame)
-                .run_not_in_state(BreakoutState::GameOver)
+                .run_not_in_state(BreakoutState::Finished)
                 .after(GameloopStage::Input)
                 .label(GameloopStage::PaddleMovement),
         )
@@ -96,7 +97,7 @@ impl Plugin for LocalPlugin {
         .add_system(
             restart_game
                 .run_in_state(GameState::Ingame)
-                .run_in_state(BreakoutState::GameOver)
+                .run_in_state(BreakoutState::Finished)
                 .run_if(left_mouse_just_button_pressed),
         )
         .add_system(
@@ -106,7 +107,12 @@ impl Plugin for LocalPlugin {
                 .run_if_not(left_mouse_button_pressed),
         )
         .add_system(update_lives_counter.run_in_state(GameState::Ingame))
-        .add_system(update_score_counter.run_in_state(GameState::Ingame));
+        .add_system(update_score_counter.run_in_state(GameState::Ingame))
+        .add_system(
+            check_cleared
+                .run_in_state(GameState::Ingame)
+                .run_in_state(BreakoutState::Playing),
+        );
 
         let timestep_label = &"fixed_timestep";
         app.add_fixed_timestep(Duration::from_millis(1), timestep_label)

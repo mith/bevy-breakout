@@ -54,11 +54,17 @@ pub(crate) enum GameloopStage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum GameResult {
+    Victory,
+    GameOver,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum BreakoutState {
+    Start,
     Serve,
     Playing,
-    GameOver,
-    Start,
+    Finished,
 }
 
 #[derive(Component)]
@@ -527,7 +533,8 @@ pub(crate) fn lives(
         lives.0 = lives.0.saturating_sub(1);
 
         if lives.0 == 0 {
-            commands.insert_resource(NextState(BreakoutState::GameOver));
+            commands.insert_resource(NextState(GameResult::GameOver));
+            commands.insert_resource(NextState(BreakoutState::Finished));
         } else {
             for (mut ball_transform, mut ball_velocity) in &mut ball_query.iter_mut() {
                 ball_transform.translation = Vec3::new(0., 0., 0.);
@@ -549,12 +556,17 @@ pub(crate) fn update_lives_counter(
 }
 
 #[derive(Component)]
-struct GameOverText;
+struct FinishedText;
 
-pub(crate) fn show_game_over(mut commands: Commands, asset_server: Res<AssetServer>) {
+pub(crate) fn show_game_finished(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    game_result: Res<CurrentState<GameResult>>,
+    score: Res<Score>,
+) {
     commands
         .spawn((
-            GameOverText,
+            FinishedText,
             NodeBundle {
                 style: Style {
                     size: Size::new(Val::Percent(100.), Val::Percent(100.)),
@@ -568,14 +580,38 @@ pub(crate) fn show_game_over(mut commands: Commands, asset_server: Res<AssetServ
             },
         ))
         .with_children(|parent| {
-            parent.spawn((TextBundle::from_section(
-                "Game over",
-                TextStyle {
-                    font: asset_server.load(FONT_PATH),
-                    font_size: 30.,
-                    color: Color::WHITE,
-                },
-            ),));
+            parent.spawn(
+                TextBundle::from_section(
+                    match game_result.0 {
+                        GameResult::Victory => "Victory",
+                        GameResult::GameOver => "Game over",
+                    },
+                    TextStyle {
+                        font: asset_server.load(FONT_PATH),
+                        font_size: 30.,
+                        color: Color::WHITE,
+                    },
+                )
+                .with_style(Style {
+                    margin: UiRect::vertical(Val::Px(15.)),
+                    ..default()
+                }),
+            );
+
+            parent.spawn(
+                TextBundle::from_section(
+                    format!("Score: {}", score.0),
+                    TextStyle {
+                        font: asset_server.load(FONT_PATH),
+                        font_size: 20.,
+                        color: Color::WHITE,
+                    },
+                )
+                .with_style(Style {
+                    margin: UiRect::vertical(Val::Px(15.)),
+                    ..default()
+                }),
+            );
 
             parent.spawn(
                 TextBundle::from_section(
@@ -587,10 +623,7 @@ pub(crate) fn show_game_over(mut commands: Commands, asset_server: Res<AssetServ
                     },
                 )
                 .with_style(Style {
-                    position: UiRect {
-                        top: Val::Px(20.),
-                        ..default()
-                    },
+                    margin: UiRect::vertical(Val::Px(15.)),
                     ..default()
                 }),
             );
@@ -632,6 +665,13 @@ pub(crate) fn update_score_counter(
     }
 }
 
+pub(crate) fn check_cleared(mut commands: Commands, brick_query: Query<&Brick>) {
+    if brick_query.iter().next().is_none() {
+        commands.insert_resource(NextState(GameResult::Victory));
+        commands.insert_resource(NextState(BreakoutState::Finished));
+    }
+}
+
 pub(crate) fn restart_game(mut commands: Commands) {
     commands.insert_resource(NextState(BreakoutState::Start));
 }
@@ -653,6 +693,7 @@ impl Plugin for BreakoutPlugin {
             .add_event::<BrickCollisionEvent>()
             .add_event::<BottomCollisionEvent>()
             .add_loopless_state(BreakoutState::Start)
+            .add_loopless_state(GameResult::GameOver)
             .add_enter_system(GameState::Ingame, setup_court)
             .add_enter_system(GameState::Ingame, setup_counters)
             .add_exit_system(GameState::Ingame, despawn_with::<Court>)
@@ -660,11 +701,11 @@ impl Plugin for BreakoutPlugin {
             .add_enter_system(BreakoutState::Start, spawn_bricks)
             .add_exit_system(BreakoutState::Playing, despawn_with::<Ball>)
             .add_enter_system(BreakoutState::Serve, spawn_ball)
-            .add_enter_system(BreakoutState::GameOver, show_game_over)
-            .add_exit_system(BreakoutState::GameOver, despawn_with::<Brick>)
-            .add_exit_system(BreakoutState::GameOver, despawn_with::<GameOverText>)
-            .add_exit_system(BreakoutState::GameOver, reset_lives)
-            .add_exit_system(BreakoutState::GameOver, reset_score)
+            .add_enter_system(BreakoutState::Finished, show_game_finished)
+            .add_exit_system(BreakoutState::Finished, despawn_with::<Brick>)
+            .add_exit_system(BreakoutState::Finished, despawn_with::<FinishedText>)
+            .add_exit_system(BreakoutState::Finished, reset_lives)
+            .add_exit_system(BreakoutState::Finished, reset_score)
             .add_system(adjust_camera_scale.run_in_state(GameState::Ingame));
     }
 }
