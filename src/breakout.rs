@@ -687,7 +687,6 @@ impl Plugin for BreakoutPlugin {
         app.init_resource::<BreakoutConfig>()
             .register_type::<BreakoutConfig>()
             .register_type::<Velocity>()
-            .insert_resource(PaddleInputs(vec![default()]))
             .init_resource::<Lives>()
             .init_resource::<Score>()
             .add_event::<BrickCollisionEvent>()

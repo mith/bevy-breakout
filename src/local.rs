@@ -69,7 +69,8 @@ pub(crate) struct LocalPlugin;
 
 impl Plugin for LocalPlugin {
     fn build(&self, app: &mut App) {
-        app.insert_resource(CursorPos(Vec3::ZERO));
+        app.insert_resource(CursorPos(Vec3::ZERO))
+            .insert_resource(PaddleInputs(vec![default()]));
         app.add_system(
             update_cursor_pos
                 .run_in_state(GameState::Ingame)
