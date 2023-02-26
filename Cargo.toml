@@ -27,21 +27,11 @@ features = [
 	"bevy_ui",
 	"bevy_text",
 	"bevy_render",
-	"x11",
-    "wayland",
-	"filesystem_watcher"
-	]
+	"filesystem_watcher",
+]
 
-[target.'cfg(target_arch = "wasm32-unknown-unknown")'.dependencies.bevy]
-version = "0.9"
-default-features = false
+[target.'cfg(unix)'.dependencies.bevy]
 features = [
-	"bevy_asset",
-	"bevy_winit",
-	"bevy_core_pipeline",
-	"bevy_sprite",
-	"bevy_ui",
-	"bevy_text",
-	"bevy_render",
-	]
-
+	"x11",
+	"wayland",
+]
