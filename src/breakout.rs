@@ -1,10 +1,13 @@
 use std::f32::consts::PI;
 
-use bevy::prelude::*;
+use bevy::{
+    prelude::*,
+    sprite::collide_aabb::{collide, Collision},
+};
 
 use iyes_loopless::prelude::*;
 
-use crate::{types::GameState, util::despawn_with};
+use crate::{collision::Collider, types::GameState, util::despawn_with};
 
 pub(crate) const FONT_PATH: &str = "fonts/PublicPixel-z84yD.ttf";
 
@@ -92,6 +95,7 @@ pub(crate) fn setup_court(mut commands: Commands, config: Res<BreakoutConfig>) {
         .spawn((
             Court,
             Name::new("Court"),
+            Collider::new(config.court_size[0], config.court_size[1]),
             SpriteBundle {
                 transform: Transform::from_translation(Vec3::new(0., -30., 1.)),
                 sprite: Sprite {
@@ -124,6 +128,7 @@ pub(crate) fn setup_court(mut commands: Commands, config: Res<BreakoutConfig>) {
             parent.spawn((
                 Paddle,
                 Name::new("Paddle"),
+                Collider::new(config.paddle_size[0], config.paddle_size[1]),
                 SpriteBundle {
                     transform: Transform::from_translation(Vec3::new(
                         0.,
@@ -153,6 +158,7 @@ fn spawn_ball(
             Ball,
             Name::new("Ball"),
             Velocity::default(),
+            Collider::new(config.ball_size, config.ball_size),
             SpriteBundle {
                 transform: Transform::from_translation(Vec3::new(0.0, config.serve_offset, 0.)),
                 sprite: Sprite {
@@ -183,11 +189,14 @@ fn spawn_bricks(
         for x in 0..config.num_bricks[0] {
             for y in 0..config.num_bricks[1] {
                 {
+                    let brick_width = brick_size_with_padding[0] - config.brick_padding / 2.;
+                    let brick_height = brick_size_with_padding[1] - config.brick_padding / 2.;
                     parent.spawn((
                         Brick {
                             points: (config.num_bricks[1] - y) as u32,
                         },
                         Name::new(format!("Brick {}:{}", x, y)),
+                        Collider::new(brick_width, brick_height),
                         SpriteBundle {
                             transform: Transform::from_translation(Vec3::new(
                                 -config.court_size[0] / 2.
@@ -201,10 +210,7 @@ fn spawn_bricks(
                             )),
                             sprite: Sprite {
                                 color: brick_colors[y / 2],
-                                custom_size: Some(Vec2::new(
-                                    brick_size_with_padding[0] - config.brick_padding / 2.,
-                                    brick_size_with_padding[1] - config.brick_padding / 2.,
-                                )),
+                                custom_size: Some(Vec2::new(brick_width, brick_height)),
                                 ..default()
                             },
                             ..default()
@@ -277,63 +283,67 @@ pub(crate) struct BrickCollisionEvent {
 pub(crate) struct BottomCollisionEvent;
 
 pub(crate) fn ball_movement(
-    court_query: Query<&Sprite, With<Court>>,
+    court_query: Query<(&Collider, &Transform), With<Court>>,
     mut ball_query: Query<
-        (&mut Transform, &mut Velocity, &Sprite),
-        (With<Ball>, Without<Paddle>, Without<Brick>),
+        (&mut Transform, &mut Velocity, &Collider),
+        (With<Ball>, Without<Paddle>, Without<Brick>, Without<Court>),
     >,
-    paddle_query: Query<(&Transform, &Sprite), With<Paddle>>,
-    brick_query: Query<(Entity, &Transform, &Sprite), With<Brick>>,
+    paddle_query: Query<(&Transform, &Collider), With<Paddle>>,
+    brick_query: Query<(Entity, &Transform, &Collider), With<Brick>>,
     mut brick_collision_events: EventWriter<BrickCollisionEvent>,
     mut bottom_collision_events: EventWriter<BottomCollisionEvent>,
 ) {
-    let court_sprite_size = court_query.single().custom_size.unwrap();
-    let half_court_width = court_sprite_size.x / 2.;
-    let half_court_height = court_sprite_size[1] / 2.;
+    let (court_collider, court_transform) = court_query.single();
 
-    for (mut ball_transform, mut ball_velocity, ball_sprite) in &mut ball_query {
-        let half_ball_size = ball_sprite.custom_size.unwrap().x / 2.;
+    for (mut ball_transform, mut ball_velocity, ball_collider) in &mut ball_query {
         let ball_translation = &mut ball_transform.translation;
         ball_translation.x += ball_velocity.x;
         ball_translation.y += ball_velocity.y;
 
-        if ball_translation.x < -half_court_width + half_ball_size {
-            // Hit the left side of the court
-            ball_translation.x = -half_court_width + half_ball_size;
-            ball_velocity.x = -ball_velocity.x;
-        } else if ball_translation.x > half_court_width - half_ball_size {
-            // Hit the right side of the court
-            ball_translation.x = half_court_width - half_ball_size;
-            ball_velocity.x = -ball_velocity.x;
-        }
-
-        if ball_translation.y < -half_court_height + half_ball_size {
-            // Hit the bottom of the court
-            // Send a BottomCollisionEvent and reset the ball
-            bottom_collision_events.send(BottomCollisionEvent);
-        } else if ball_translation.y > half_court_height - half_ball_size {
-            // Hit the top of the court
-            ball_translation.y = half_court_height - half_ball_size;
-            ball_velocity.y = -ball_velocity.y;
-        }
+        if let Some(collision) = collide(
+            ball_translation.clone(),
+            ball_collider.get_size(),
+            court_transform.translation,
+            court_collider.get_size(),
+        ) {
+            match collision {
+                Collision::Left => {
+                    // Hit the left side of the court
+                    ball_velocity.x = -ball_velocity.x;
+                }
+                Collision::Right => {
+                    // Hit the right side of the court
+                    ball_velocity.x = -ball_velocity.x;
+                }
+                Collision::Top => {
+                    // Hit the top of the court
+                    ball_velocity.y = -ball_velocity.y;
+                }
+                Collision::Bottom => {
+                    // Hit the bottom of the court
+                    // Send a BottomCollisionEvent and reset the ball
+                    bottom_collision_events.send(BottomCollisionEvent);
+                }
+                _ => {}
+            };
+        };
 
         // Check for paddle collision
-        for (paddle_transform, paddle_sprite) in &paddle_query {
-            let paddle_sprite_size = paddle_sprite.custom_size.unwrap();
+        for (paddle_transform, paddle_collider) in &paddle_query {
+            let half_ball_size = ball_collider.get_half_size().x;
+            let paddle_collider_size = paddle_collider.get_size();
             let paddle_translation = &paddle_transform.translation;
-            let paddle_half_width = paddle_sprite_size.x / 2.;
-            let paddle_half_height = paddle_sprite_size.y / 2.;
+            let paddle_half_width = paddle_collider_size.x / 2.;
+            let paddle_half_height = paddle_collider_size.y / 2.;
             let paddle_top = paddle_translation.y + paddle_half_height;
-            let paddle_left = paddle_translation.x - paddle_half_width;
-            let paddle_right = paddle_translation.x + paddle_half_width;
 
-            let ball_left = ball_translation.x - half_ball_size;
-            let ball_right = ball_translation.x + half_ball_size;
-            let ball_bottom = ball_translation.y - half_ball_size;
-
-            if ball_bottom < paddle_top && ball_left < paddle_right && ball_right > paddle_left {
+            if let Some(_collision) = collide(
+                ball_translation.clone(),
+                ball_collider.get_size(),
+                paddle_translation.clone(),
+                paddle_collider.get_size(),
+            ) {
                 // Hit the paddle
-                ball_translation.y = paddle_top;
                 ball_velocity.y = -ball_velocity.y;
                 // the distance from the center of the paddle, normalized to [-1, 1]
                 let distance_from_center = (ball_translation.x - paddle_translation.x)
@@ -352,39 +362,36 @@ pub(crate) fn ball_movement(
         let mut new_velocity = ball_velocity.0;
 
         // Check for brick collision
-        for (brick_entity, brick_transform, brick_sprite) in &brick_query {
+        for (brick_entity, brick_transform, brick_collider) in &brick_query {
             let brick_translation = &brick_transform.translation;
-            let brick_half_width = brick_sprite.custom_size.unwrap().x / 2.;
-            let brick_half_height = brick_sprite.custom_size.unwrap().y / 2.;
-            let brick_top = brick_translation.y + brick_half_height;
-            let brick_bottom = brick_translation.y - brick_half_height;
-            let brick_left = brick_translation.x - brick_half_width;
-            let brick_right = brick_translation.x + brick_half_width;
 
-            let ball_left = ball_translation.x - half_ball_size;
-            let ball_right = ball_translation.x + half_ball_size;
-            let ball_top = ball_translation.y + half_ball_size;
-            let ball_bottom = ball_translation.y - half_ball_size;
-
-            if ball_top > brick_bottom
-                && ball_bottom < brick_top
-                && ball_left < brick_right
-                && ball_right > brick_left
-            {
+            if let Some(collision) = collide(
+                ball_translation.clone(),
+                ball_collider.get_size(),
+                brick_translation.clone(),
+                brick_collider.get_size(),
+            ) {
                 // Hit the brick
                 brick_collision_events.send(BrickCollisionEvent { brick_entity });
 
-                let left_diff = (ball_left - brick_right).abs();
-                let right_diff = (ball_right - brick_left).abs();
-                let top_diff = (ball_top - brick_bottom).abs();
-                let bottom_diff = (ball_bottom - brick_top).abs();
-
-                if left_diff.min(right_diff) < top_diff.min(bottom_diff) {
-                    // Hit the brick from the left or right
-                    new_velocity.x = -ball_velocity.x;
-                } else {
-                    // Hit the brick from the top or bottom
-                    new_velocity.y = -ball_velocity.y;
+                match collision {
+                    Collision::Left => {
+                        // Hit the left side of the brick
+                        new_velocity.x = -ball_velocity.x;
+                    }
+                    Collision::Right => {
+                        // Hit the right side of the brick
+                        new_velocity.x = -ball_velocity.x;
+                    }
+                    Collision::Top => {
+                        // Hit the top of the brick
+                        new_velocity.y = -ball_velocity.y;
+                    }
+                    Collision::Bottom => {
+                        // Hit the bottom of the brick
+                        new_velocity.y = -ball_velocity.y;
+                    }
+                    _ => {}
                 }
             }
         }

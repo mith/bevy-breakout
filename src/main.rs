@@ -10,6 +10,7 @@ use local::LocalPlugin;
 use types::GameState;
 mod breakout;
 mod camera;
+mod collision;
 mod counters;
 mod local;
 mod types;
