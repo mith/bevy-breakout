@@ -32,10 +32,10 @@ impl Default for BreakoutConfig {
             court_size: [300., 450.],
             scale: 0.9,
             paddle_size: [40., 10.],
-            paddle_speed: 10.,
+            paddle_speed: 1000.,
             paddle_offset: 20.,
             angle_multiplier: 0.5,
-            serve_speed: 0.5,
+            serve_speed: 500.,
             serve_offset: 20.,
             num_bricks: [14, 8],
             bricks_top_offset: 50.,
@@ -227,6 +227,7 @@ pub(crate) struct PaddleInputs(pub(crate) Vec<PaddleInput>);
 
 pub(crate) fn serve(
     mut commands: Commands,
+    fixed_timestep: Res<FixedTimesteps>,
     config: Res<BreakoutConfig>,
     mut ball_query: Query<(Entity, &mut Transform, &mut Velocity), (With<Ball>, Without<Paddle>)>,
     court_query: Query<Entity, With<Court>>,
@@ -236,7 +237,10 @@ pub(crate) fn serve(
     let paddle_translation = paddle_query.single_mut().translation;
     let court_entity = court_query.single();
     commands.entity(court_entity).add_child(ball_entity);
-    ball_velocity.0 = config.serve_speed * Vec2::new(0., 1.).normalize();
+    let current_timestep = fixed_timestep.get("fixed_timestep").unwrap();
+    ball_velocity.0 = config.serve_speed
+        * current_timestep.timestep().as_secs_f32()
+        * Vec2::new(0., 1.).normalize();
     ball_transform.translation = Vec3::new(
         paddle_translation.x,
         paddle_translation.y + config.serve_offset,
@@ -246,6 +250,7 @@ pub(crate) fn serve(
 }
 
 pub(crate) fn paddle_movement(
+    time: Res<Time>,
     mut paddle_query: Query<&mut Transform, With<Paddle>>,
     config: Res<BreakoutConfig>,
     inputs: Res<PaddleInputs>,
@@ -257,7 +262,7 @@ pub(crate) fn paddle_movement(
         let input = &inputs[0];
 
         let translation = &mut transform.translation;
-        translation.x += input.move_direction * config.paddle_speed;
+        translation.x += input.move_direction * config.paddle_speed * time.delta_seconds();
         translation.x = translation.x.clamp(
             -half_court_width + half_paddle_width,
             half_court_width - half_paddle_width,
