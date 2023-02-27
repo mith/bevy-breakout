@@ -283,7 +283,7 @@ pub(crate) struct BrickCollisionEvent {
 pub(crate) struct BottomCollisionEvent;
 
 pub(crate) fn ball_movement(
-    court_query: Query<(&Collider, &Transform), With<Court>>,
+    court_query: Query<&Collider, With<Court>>,
     mut ball_query: Query<
         (&mut Transform, &mut Velocity, &Collider),
         (With<Ball>, Without<Paddle>, Without<Brick>, Without<Court>),
@@ -293,7 +293,7 @@ pub(crate) fn ball_movement(
     mut brick_collision_events: EventWriter<BrickCollisionEvent>,
     mut bottom_collision_events: EventWriter<BottomCollisionEvent>,
 ) {
-    let (court_collider, court_transform) = court_query.single();
+    let court_collider = court_query.single();
 
     for (mut ball_transform, mut ball_velocity, ball_collider) in &mut ball_query {
         let ball_translation = &mut ball_transform.translation;
@@ -301,26 +301,19 @@ pub(crate) fn ball_movement(
         ball_translation.y += ball_velocity.y;
 
         if let Some(collision) = collide(
-            ball_translation.clone(),
+            *ball_translation,
             ball_collider.get_size(),
-            court_transform.translation,
+            Vec3::ZERO,
             court_collider.get_size(),
         ) {
             match collision {
-                Collision::Left => {
-                    // Hit the left side of the court
-                    ball_velocity.x = -ball_velocity.x;
-                }
-                Collision::Right => {
-                    // Hit the right side of the court
+                Collision::Left | Collision::Right => {
                     ball_velocity.x = -ball_velocity.x;
                 }
                 Collision::Top => {
-                    // Hit the top of the court
                     ball_velocity.y = -ball_velocity.y;
                 }
                 Collision::Bottom => {
-                    // Hit the bottom of the court
                     // Send a BottomCollisionEvent and reset the ball
                     bottom_collision_events.send(BottomCollisionEvent);
                 }
@@ -338,9 +331,9 @@ pub(crate) fn ball_movement(
             let paddle_top = paddle_translation.y + paddle_half_height;
 
             if let Some(_collision) = collide(
-                ball_translation.clone(),
+                *ball_translation,
                 ball_collider.get_size(),
-                paddle_translation.clone(),
+                *paddle_translation,
                 paddle_collider.get_size(),
             ) {
                 // Hit the paddle
@@ -366,29 +359,19 @@ pub(crate) fn ball_movement(
             let brick_translation = &brick_transform.translation;
 
             if let Some(collision) = collide(
-                ball_translation.clone(),
+                *ball_translation,
                 ball_collider.get_size(),
-                brick_translation.clone(),
+                *brick_translation,
                 brick_collider.get_size(),
             ) {
                 // Hit the brick
                 brick_collision_events.send(BrickCollisionEvent { brick_entity });
 
                 match collision {
-                    Collision::Left => {
-                        // Hit the left side of the brick
+                    Collision::Left | Collision::Right => {
                         new_velocity.x = -ball_velocity.x;
                     }
-                    Collision::Right => {
-                        // Hit the right side of the brick
-                        new_velocity.x = -ball_velocity.x;
-                    }
-                    Collision::Top => {
-                        // Hit the top of the brick
-                        new_velocity.y = -ball_velocity.y;
-                    }
-                    Collision::Bottom => {
-                        // Hit the bottom of the brick
+                    Collision::Top | Collision::Bottom => {
                         new_velocity.y = -ball_velocity.y;
                     }
                     _ => {}
