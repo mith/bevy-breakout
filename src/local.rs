@@ -5,9 +5,9 @@ use iyes_loopless::prelude::*;
 
 use crate::{
     breakout::{
-        ball_movement, brick_collision, check_cleared, lives, paddle_movement, restart_game, serve,
-        start_serve, update_lives_counter, update_score_counter, BottomCollisionEvent,
-        BreakoutState, BrickCollisionEvent, GameloopStage, Paddle, PaddleInputs,
+        ball_movement, brick_collision, bricks_cleared, finish_game, lives, paddle_movement,
+        restart_game, serve, start_serve, BottomCollisionEvent, BreakoutState, BrickCollisionEvent,
+        GameloopStage, Paddle, PaddleInputs,
     },
     types::GameState,
     util::cursor_position_in_world,
@@ -65,7 +65,7 @@ fn left_mouse_button_pressed(mouse_button_input: Res<Input<MouseButton>>) -> boo
     mouse_button_input.pressed(MouseButton::Left)
 }
 
-fn serve_button_just_pressed(paddle_inputs: Res<PaddleInputs>) -> bool {
+fn serve_button_pressed(paddle_inputs: Res<PaddleInputs>) -> bool {
     paddle_inputs[0].serve
 }
 
@@ -96,7 +96,7 @@ impl Plugin for LocalPlugin {
             serve
                 .run_in_state(GameState::Ingame)
                 .run_in_state(BreakoutState::Serve)
-                .run_if(serve_button_just_pressed)
+                .run_if(serve_button_pressed)
                 .after(GameloopStage::PaddleMovement)
                 .label(GameloopStage::Serve),
         )
@@ -112,12 +112,11 @@ impl Plugin for LocalPlugin {
                 .run_in_state(BreakoutState::Start)
                 .run_if_not(left_mouse_button_pressed),
         )
-        .add_system(update_lives_counter.run_in_state(GameState::Ingame))
-        .add_system(update_score_counter.run_in_state(GameState::Ingame))
         .add_system(
-            check_cleared
+            finish_game
                 .run_in_state(GameState::Ingame)
-                .run_in_state(BreakoutState::Playing),
+                .run_in_state(BreakoutState::Playing)
+                .run_if(bricks_cleared),
         );
 
         let timestep_label = &"fixed_timestep";

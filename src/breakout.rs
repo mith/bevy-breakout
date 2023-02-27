@@ -6,7 +6,7 @@ use iyes_loopless::prelude::*;
 
 use crate::{types::GameState, util::despawn_with};
 
-const FONT_PATH: &str = "fonts/PublicPixel-z84yD.ttf";
+pub(crate) const FONT_PATH: &str = "fonts/PublicPixel-z84yD.ttf";
 
 #[derive(Resource, Reflect)]
 #[reflect(Resource)]
@@ -85,130 +85,6 @@ pub(crate) struct Velocity(pub(crate) Vec2);
 pub(crate) struct Brick {
     pub(crate) points: u32,
 }
-
-fn calculate_court_scale(window: &Window, config: &BreakoutConfig) -> f32 {
-    let height_ratio = window.height() / config.court_size[1];
-    let width_ratio = window.width() / config.court_size[0];
-    (1. / height_ratio.min(width_ratio)) * (1. / config.scale)
-}
-
-pub(crate) fn setup_camera(
-    mut commands: Commands,
-    config: Res<BreakoutConfig>,
-    windows: Res<Windows>,
-) {
-    let window = windows.primary();
-
-    commands.spawn(Camera2dBundle {
-        projection: OrthographicProjection {
-            scale: calculate_court_scale(window, &config),
-            ..default()
-        },
-        ..default()
-    });
-}
-
-pub(crate) fn adjust_camera_scale(
-    mut query: Query<&mut OrthographicProjection, With<Camera>>,
-    mut ui_scale: ResMut<UiScale>,
-    config: Res<BreakoutConfig>,
-    windows: Res<Windows>,
-) {
-    let window = windows.primary();
-
-    let current_scale = calculate_court_scale(window, &config);
-    for mut projection in &mut query {
-        projection.scale = current_scale;
-    }
-
-    ui_scale.scale = 1. / current_scale as f64;
-}
-
-#[derive(Component)]
-pub(crate) struct Counters;
-
-#[derive(Component)]
-pub(crate) struct LivesCounter;
-
-#[derive(Component)]
-pub(crate) struct ScoreCounter;
-
-pub(crate) fn setup_counters(
-    mut commands: Commands,
-    config: Res<BreakoutConfig>,
-    asset_server: Res<AssetServer>,
-    lives: Res<Lives>,
-    score: Res<Score>,
-) {
-    let font = asset_server.load(FONT_PATH);
-    let style = TextStyle {
-        font,
-        font_size: 15.,
-        color: Color::WHITE,
-    };
-    let counter_offset = 15.;
-
-    commands
-        .spawn((
-            Counters,
-            Name::new("Counters"),
-            NodeBundle {
-                style: Style {
-                    size: Size::new(Val::Percent(100.), Val::Auto),
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::FlexStart,
-                    ..default()
-                },
-
-                ..default()
-            },
-        ))
-        .with_children(|parent| {
-            parent
-                .spawn(NodeBundle {
-                    style: Style {
-                        size: Size::new(Val::Px(config.court_size[0]), Val::Auto),
-                        justify_content: JustifyContent::SpaceBetween,
-                        ..default()
-                    },
-                    ..default()
-                })
-                .add_children(|counter_container| {
-                    counter_container.spawn((
-                        Name::new("Lives counter"),
-                        LivesCounter,
-                        TextBundle {
-                            text: Text::from_sections([
-                                TextSection::new("lives:", style.clone()),
-                                TextSection::new(format!("{}", lives.0), style.clone()),
-                            ]),
-                            style: Style {
-                                margin: UiRect::all(Val::Px(counter_offset)),
-                                ..default()
-                            },
-                            ..default()
-                        },
-                    ));
-
-                    counter_container.spawn((
-                        Name::new("Score counter"),
-                        ScoreCounter,
-                        TextBundle {
-                            text: Text::from_sections([
-                                TextSection::new("score:", style.clone()),
-                                TextSection::new(format!("{}", score.0), style),
-                            ]),
-                            style: Style {
-                                margin: UiRect::all(Val::Px(counter_offset)),
-                                ..default()
-                            },
-                            ..default()
-                        },
-                    ));
-                })
-        });
-}
-
 pub(crate) fn setup_court(mut commands: Commands, config: Res<BreakoutConfig>) {
     let line_width = 5.;
     commands
@@ -542,16 +418,6 @@ pub(crate) fn lives(
     }
 }
 
-pub(crate) fn update_lives_counter(
-    lives: Res<Lives>,
-    mut lives_counter_query: Query<&mut Text, With<LivesCounter>>,
-) {
-    if lives.is_changed() {
-        let mut lives_counter = lives_counter_query.single_mut();
-        lives_counter.sections[1].value = format!("{}", lives.0);
-    }
-}
-
 #[derive(Component)]
 struct FinishedText;
 
@@ -564,6 +430,7 @@ pub(crate) fn show_game_finished(
     commands
         .spawn((
             FinishedText,
+            Name::new("Finished text"),
             NodeBundle {
                 style: Style {
                     size: Size::new(Val::Percent(100.), Val::Percent(100.)),
@@ -577,7 +444,8 @@ pub(crate) fn show_game_finished(
             },
         ))
         .with_children(|parent| {
-            parent.spawn(
+            parent.spawn((
+                Name::new("Game result text"),
                 TextBundle::from_section(
                     match *game_result {
                         GameResult::Victory => "Victory",
@@ -593,9 +461,10 @@ pub(crate) fn show_game_finished(
                     margin: UiRect::vertical(Val::Px(15.)),
                     ..default()
                 }),
-            );
+            ));
 
-            parent.spawn(
+            parent.spawn((
+                Name::new("Final score"),
                 TextBundle::from_section(
                     format!("Score: {}", score.0),
                     TextStyle {
@@ -608,9 +477,10 @@ pub(crate) fn show_game_finished(
                     margin: UiRect::vertical(Val::Px(15.)),
                     ..default()
                 }),
-            );
+            ));
 
-            parent.spawn(
+            parent.spawn((
+                Name::new("Restart prompt"),
                 TextBundle::from_section(
                     "click to restart",
                     TextStyle {
@@ -623,7 +493,7 @@ pub(crate) fn show_game_finished(
                     margin: UiRect::vertical(Val::Px(15.)),
                     ..default()
                 }),
-            );
+            ));
         });
 }
 
@@ -652,21 +522,13 @@ pub(crate) fn brick_collision(
     }
 }
 
-pub(crate) fn update_score_counter(
-    score: Res<Score>,
-    mut score_counter_query: Query<&mut Text, With<ScoreCounter>>,
-) {
-    if score.is_changed() {
-        let mut score_counter = score_counter_query.single_mut();
-        score_counter.sections[1].value = format!("{}", score.0);
-    }
+pub(crate) fn bricks_cleared(brick_query: Query<&Brick>) -> bool {
+    brick_query.is_empty()
 }
 
-pub(crate) fn check_cleared(mut commands: Commands, brick_query: Query<&Brick>) {
-    if brick_query.is_empty() {
-        commands.insert_resource(GameResult::Victory);
-        commands.insert_resource(NextState(BreakoutState::Finished));
-    }
+pub(crate) fn finish_game(mut commands: Commands) {
+    commands.insert_resource(GameResult::Victory);
+    commands.insert_resource(NextState(BreakoutState::Finished));
 }
 
 pub(crate) fn restart_game(mut commands: Commands) {
@@ -694,9 +556,7 @@ impl Plugin for BreakoutPlugin {
             .add_event::<BottomCollisionEvent>()
             .add_loopless_state(BreakoutState::Start)
             .add_enter_system(GameState::Ingame, setup_court)
-            .add_enter_system(GameState::Ingame, setup_counters)
             .add_exit_system(GameState::Ingame, despawn_with::<Court>)
-            .add_exit_system(GameState::Ingame, despawn_with::<Counters>)
             .add_enter_system(BreakoutState::Start, spawn_bricks)
             .add_exit_system(BreakoutState::Playing, despawn_with::<Ball>)
             .add_enter_system(BreakoutState::Serve, spawn_ball)
@@ -705,7 +565,6 @@ impl Plugin for BreakoutPlugin {
             .add_exit_system(BreakoutState::Finished, despawn_with::<FinishedText>)
             .add_exit_system(BreakoutState::Finished, reset_lives)
             .add_exit_system(BreakoutState::Finished, reset_score)
-            .add_exit_system(BreakoutState::Finished, clear_game_result)
-            .add_system(adjust_camera_scale.run_in_state(GameState::Ingame));
+            .add_exit_system(BreakoutState::Finished, clear_game_result);
     }
 }
