@@ -1,11 +1,6 @@
 use bevy::prelude::*;
-use iyes_loopless::prelude::*;
 
-use crate::{
-    breakout::{BreakoutConfig, Lives, Score, FONT_PATH},
-    types::GameState,
-    util::despawn_with,
-};
+use crate::breakout::{BreakoutConfig, Lives, Score, FONT_PATH};
 #[derive(Component)]
 pub(crate) struct Counters;
 
@@ -55,7 +50,7 @@ pub(crate) fn setup_counters(
                     },
                     ..default()
                 })
-                .add_children(|counter_container| {
+                .with_children(|counter_container| {
                     counter_container.spawn((
                         Name::new("Lives counter"),
                         LivesCounter,
@@ -87,7 +82,7 @@ pub(crate) fn setup_counters(
                             ..default()
                         },
                     ));
-                })
+                });
         });
 }
 
@@ -115,9 +110,8 @@ pub(crate) struct CountersPlugin;
 
 impl Plugin for CountersPlugin {
     fn build(&self, app: &mut App) {
-        app.add_enter_system(GameState::Ingame, setup_counters)
-            .add_exit_system(GameState::Ingame, despawn_with::<Counters>)
-            .add_system(update_lives_counter.run_in_state(GameState::Ingame))
-            .add_system(update_score_counter.run_in_state(GameState::Ingame));
+        app.add_startup_system(setup_counters)
+            .add_system(update_lives_counter)
+            .add_system(update_score_counter);
     }
 }

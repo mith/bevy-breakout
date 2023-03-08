@@ -11,13 +11,11 @@ pub(crate) fn despawn_with<T: Component>(
 }
 
 pub(crate) fn cursor_position_in_world(
-    windows: &Windows,
+    window: &Window,
     cursor_position: Vec2,
     camera_transform: &GlobalTransform,
     camera: &Camera,
 ) -> Vec3 {
-    let window = windows.primary();
-
     let window_size = Vec2::new(window.width(), window.height());
 
     // Convert screen position [0..resolution] to ndc [-1..1]

@@ -5,9 +5,7 @@ use bevy::{
     sprite::collide_aabb::{collide, Collision},
 };
 
-use iyes_loopless::prelude::*;
-
-use crate::{collision::Collider, types::GameState, util::despawn_with};
+use crate::{collision::Collider, util::despawn_with};
 
 pub(crate) const FONT_PATH: &str = "fonts/PublicPixel-z84yD.ttf";
 
@@ -49,23 +47,15 @@ impl Default for BreakoutConfig {
     }
 }
 
-#[derive(SystemLabel)]
-pub(crate) enum GameloopStage {
-    Input,
-    PaddleMovement,
-    Serve,
-    BallMovement,
-    Scoring,
-}
-
 #[derive(Resource)]
 pub(crate) enum GameResult {
     Victory,
     GameOver,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(States, Default, Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum BreakoutState {
+    #[default]
     Start,
     Serve,
     Playing,
@@ -152,7 +142,7 @@ fn spawn_ball(
     paddle_query: Query<Entity, With<Paddle>>,
 ) {
     let paddle_entity = paddle_query.single();
-    commands.entity(paddle_entity).add_children(|parent| {
+    commands.entity(paddle_entity).with_children(|parent| {
         // Spawn ball
         parent.spawn((
             Ball,
@@ -184,7 +174,7 @@ fn spawn_bricks(
     ];
 
     let court = court_query.single();
-    commands.entity(court).add_children(|parent| {
+    commands.entity(court).with_children(|parent| {
         let brick_colors = [Color::RED, Color::ORANGE, Color::GREEN, Color::YELLOW];
         for x in 0..config.num_bricks[0] {
             for y in 0..config.num_bricks[1] {
@@ -195,7 +185,7 @@ fn spawn_bricks(
                         Brick {
                             points: (config.num_bricks[1] - y) as u32,
                         },
-                        Name::new(format!("Brick {}:{}", x, y)),
+                        Name::new("Brick"),
                         Collider::new(brick_width, brick_height),
                         SpriteBundle {
                             transform: Transform::from_translation(Vec3::new(
@@ -233,26 +223,25 @@ pub(crate) struct PaddleInputs(pub(crate) Vec<PaddleInput>);
 
 pub(crate) fn serve(
     mut commands: Commands,
-    fixed_timestep: Res<FixedTimesteps>,
+    fixed_timestep: Res<FixedTime>,
     config: Res<BreakoutConfig>,
     mut ball_query: Query<(Entity, &mut Transform, &mut Velocity), (With<Ball>, Without<Paddle>)>,
     court_query: Query<Entity, With<Court>>,
     mut paddle_query: Query<&mut Transform, With<Paddle>>,
+    mut next_state: ResMut<NextState<BreakoutState>>,
 ) {
     let (ball_entity, mut ball_transform, mut ball_velocity) = ball_query.single_mut();
     let paddle_translation = paddle_query.single_mut().translation;
     let court_entity = court_query.single();
     commands.entity(court_entity).add_child(ball_entity);
-    let current_timestep = fixed_timestep.get("fixed_timestep").unwrap();
-    ball_velocity.0 = config.serve_speed
-        * current_timestep.timestep().as_secs_f32()
-        * Vec2::new(0., 1.).normalize();
+    let current_timestep = fixed_timestep.period.as_secs_f32();
+    ball_velocity.0 = config.serve_speed * current_timestep * Vec2::new(0., 1.).normalize();
     ball_transform.translation = Vec3::new(
         paddle_translation.x,
         paddle_translation.y + config.serve_offset,
         1.,
     );
-    commands.insert_resource(NextState(BreakoutState::Playing));
+    next_state.set(BreakoutState::Playing);
 }
 
 pub(crate) fn paddle_movement(
@@ -280,6 +269,7 @@ pub(crate) struct BrickCollisionEvent {
     brick_entity: Entity,
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct BottomCollisionEvent;
 
 pub(crate) fn ball_movement(
@@ -396,19 +386,20 @@ pub(crate) fn lives(
     mut lives: ResMut<Lives>,
     mut bottom_collision_events: EventReader<BottomCollisionEvent>,
     mut ball_query: Query<(&mut Transform, &mut Velocity), With<Ball>>,
+    mut next_state: ResMut<NextState<BreakoutState>>,
 ) {
     for _ in bottom_collision_events.iter() {
         lives.0 = lives.0.saturating_sub(1);
 
         if lives.0 == 0 {
             commands.insert_resource(GameResult::GameOver);
-            commands.insert_resource(NextState(BreakoutState::Finished));
+            next_state.set(BreakoutState::Finished);
         } else {
             for (mut ball_transform, mut ball_velocity) in &mut ball_query.iter_mut() {
                 ball_transform.translation = Vec3::new(0., 0., 0.);
                 ball_velocity.0 = Vec2::new(0., 0.);
             }
-            commands.insert_resource(NextState(BreakoutState::Serve));
+            next_state.set(BreakoutState::Serve);
         }
     }
 }
@@ -421,6 +412,7 @@ pub(crate) fn show_game_finished(
     asset_server: Res<AssetServer>,
     game_result: Res<GameResult>,
     score: Res<Score>,
+    lives: Res<Lives>,
 ) {
     commands
         .spawn((
@@ -433,6 +425,7 @@ pub(crate) fn show_game_finished(
                     justify_content: JustifyContent::Center,
                     align_items: AlignItems::Center,
                     flex_direction: FlexDirection::Column,
+                    position: UiRect::top(Val::Px(20.)),
                     ..default()
                 },
                 ..default()
@@ -461,7 +454,7 @@ pub(crate) fn show_game_finished(
             parent.spawn((
                 Name::new("Final score"),
                 TextBundle::from_section(
-                    format!("Score: {}", score.0),
+                    "Final score:",
                     TextStyle {
                         font: asset_server.load(FONT_PATH),
                         font_size: 20.,
@@ -469,7 +462,38 @@ pub(crate) fn show_game_finished(
                     },
                 )
                 .with_style(Style {
-                    margin: UiRect::vertical(Val::Px(15.)),
+                    margin: UiRect::top(Val::Px(15.)),
+                    ..default()
+                }),
+            ));
+
+            let score_text_style = TextStyle {
+                font: asset_server.load(FONT_PATH),
+                font_size: 20.,
+                color: Color::WHITE,
+            };
+            parent.spawn((
+                Name::new("Score"),
+                TextBundle::from_sections([
+                    TextSection::new(score.0.to_string(), score_text_style.clone()),
+                    TextSection::new(" + ", score_text_style.clone()),
+                    TextSection::new((lives.0 * 100).to_string(), score_text_style.clone()),
+                    TextSection::new(" x 100", score_text_style.clone()),
+                ])
+                .with_style(Style {
+                    margin: UiRect::vertical(Val::Px(5.)),
+                    ..default()
+                }),
+            ));
+
+            parent.spawn((
+                Name::new("Final score"),
+                TextBundle::from_sections([
+                    TextSection::new("= ", score_text_style.clone()),
+                    TextSection::new((lives.0 * 100 + score.0).to_string(), score_text_style),
+                ])
+                .with_style(Style {
+                    margin: UiRect::bottom(Val::Px(15.)),
                     ..default()
                 }),
             ));
@@ -521,17 +545,20 @@ pub(crate) fn bricks_cleared(brick_query: Query<&Brick>) -> bool {
     brick_query.is_empty()
 }
 
-pub(crate) fn finish_game(mut commands: Commands) {
+pub(crate) fn finish_game(
+    mut commands: Commands,
+    mut next_state: ResMut<NextState<BreakoutState>>,
+) {
     commands.insert_resource(GameResult::Victory);
-    commands.insert_resource(NextState(BreakoutState::Finished));
+    next_state.set(BreakoutState::Finished);
 }
 
-pub(crate) fn restart_game(mut commands: Commands) {
-    commands.insert_resource(NextState(BreakoutState::Start));
+pub(crate) fn restart_game(mut next_state: ResMut<NextState<BreakoutState>>) {
+    next_state.set(BreakoutState::Start);
 }
 
-pub(crate) fn start_serve(mut commands: Commands) {
-    commands.insert_resource(NextState(BreakoutState::Serve));
+pub(crate) fn start_serve(mut next_state: ResMut<NextState<BreakoutState>>) {
+    next_state.set(BreakoutState::Serve);
 }
 
 pub(crate) fn clear_game_result(mut commands: Commands) {
@@ -549,17 +576,16 @@ impl Plugin for BreakoutPlugin {
             .init_resource::<Score>()
             .add_event::<BrickCollisionEvent>()
             .add_event::<BottomCollisionEvent>()
-            .add_loopless_state(BreakoutState::Start)
-            .add_enter_system(GameState::Ingame, setup_court)
-            .add_exit_system(GameState::Ingame, despawn_with::<Court>)
-            .add_enter_system(BreakoutState::Start, spawn_bricks)
-            .add_exit_system(BreakoutState::Playing, despawn_with::<Ball>)
-            .add_enter_system(BreakoutState::Serve, spawn_ball)
-            .add_enter_system(BreakoutState::Finished, show_game_finished)
-            .add_exit_system(BreakoutState::Finished, despawn_with::<Brick>)
-            .add_exit_system(BreakoutState::Finished, despawn_with::<FinishedText>)
-            .add_exit_system(BreakoutState::Finished, reset_lives)
-            .add_exit_system(BreakoutState::Finished, reset_score)
-            .add_exit_system(BreakoutState::Finished, clear_game_result);
+            .add_state::<BreakoutState>()
+            .add_startup_system(setup_court)
+            .add_system(spawn_bricks.in_schedule(OnEnter(BreakoutState::Start)))
+            .add_system(despawn_with::<Ball>.in_schedule(OnExit(BreakoutState::Playing)))
+            .add_system(spawn_ball.in_schedule(OnEnter(BreakoutState::Serve)))
+            .add_system(show_game_finished.in_schedule(OnEnter(BreakoutState::Finished)))
+            .add_system(despawn_with::<Brick>.in_schedule(OnExit(BreakoutState::Finished)))
+            .add_system(despawn_with::<FinishedText>.in_schedule(OnExit(BreakoutState::Finished)))
+            .add_system(reset_lives.in_schedule(OnExit(BreakoutState::Finished)))
+            .add_system(reset_score.in_schedule(OnExit(BreakoutState::Finished)))
+            .add_system(clear_game_result.in_schedule(OnExit(BreakoutState::Finished)));
     }
 }

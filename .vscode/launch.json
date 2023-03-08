@@ -13,7 +13,6 @@
                     "build",
                     "--bin=breakout",
                     "--package=breakout",
-                    "--features=inspector"
                 ],
                 "filter": {
                     "name": "breakout",

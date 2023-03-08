@@ -1,7 +1,6 @@
-use bevy::prelude::*;
-use iyes_loopless::prelude::*;
+use bevy::{prelude::*, window::PrimaryWindow};
 
-use crate::{breakout::BreakoutConfig, types::GameState};
+use crate::breakout::BreakoutConfig;
 
 fn calculate_court_scale(window: &Window, config: &BreakoutConfig) -> f32 {
     let height_ratio = window.height() / config.court_size[1];
@@ -12,9 +11,9 @@ fn calculate_court_scale(window: &Window, config: &BreakoutConfig) -> f32 {
 pub(crate) fn setup_camera(
     mut commands: Commands,
     config: Res<BreakoutConfig>,
-    windows: Res<Windows>,
+    primary_window: Query<&Window, With<PrimaryWindow>>,
 ) {
-    let window = windows.primary();
+    let window = primary_window.single();
 
     commands.spawn(Camera2dBundle {
         projection: OrthographicProjection {
@@ -29,9 +28,9 @@ pub(crate) fn adjust_camera_scale(
     mut query: Query<&mut OrthographicProjection, With<Camera>>,
     mut ui_scale: ResMut<UiScale>,
     config: Res<BreakoutConfig>,
-    windows: Res<Windows>,
+    primary_window: Query<&Window, With<PrimaryWindow>>,
 ) {
-    let window = windows.primary();
+    let window = primary_window.single();
 
     let current_scale = calculate_court_scale(window, &config);
     for mut projection in &mut query {
@@ -46,6 +45,6 @@ pub(crate) struct ScalingCameraPlugin;
 impl Plugin for ScalingCameraPlugin {
     fn build(&self, app: &mut App) {
         app.add_startup_system(setup_camera)
-            .add_system(adjust_camera_scale.run_in_state(GameState::Ingame));
+            .add_system(adjust_camera_scale);
     }
 }

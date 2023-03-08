@@ -5,7 +5,7 @@ authors = ["Simon Voordouw <simonvoordouw@gmail.com>"]
 edition = "2021"
 
 [features]
-inspector = ["dep:bevy-inspector-egui", "iyes_loopless/bevy-inspector-egui"]
+inspector = ["dep:bevy-inspector-egui"]
 
 [profile.small-release]
 inherits = "release"
@@ -14,10 +14,9 @@ opt-level = 'z'
 
 [dependencies]
 bevy-inspector-egui = { version = "0.17.0", optional = true }
-iyes_loopless = { version = "0.9.1" }
 
 [dependencies.bevy]
-version = "0.9"
+version = "0.10"
 default-features = false
 features = [
 	"bevy_asset",
@@ -31,7 +30,7 @@ features = [
 ]
 
 [target.'cfg(unix)'.dependencies.bevy]
-version = "0.9"
+version = "0.10"
 features = [
 	"x11",
 	"wayland",

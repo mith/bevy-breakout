@@ -1,15 +1,13 @@
 use std::time::Duration;
 
-use bevy::prelude::*;
-use iyes_loopless::prelude::*;
+use bevy::{prelude::*, window::PrimaryWindow};
 
 use crate::{
     breakout::{
         ball_movement, brick_collision, bricks_cleared, finish_game, lives, paddle_movement,
         restart_game, serve, start_serve, BottomCollisionEvent, BreakoutState, BrickCollisionEvent,
-        GameloopStage, Paddle, PaddleInputs,
+        Paddle, PaddleInputs,
     },
-    types::GameState,
     util::cursor_position_in_world,
 };
 
@@ -17,7 +15,7 @@ use crate::{
 struct CursorPosition(pub(crate) Vec3);
 
 fn update_cursor_pos(
-    windows: Res<Windows>,
+    primary_window: Query<&Window, With<PrimaryWindow>>,
     camera_query: Query<(&GlobalTransform, &Camera)>,
     mut cursor_moved_events: EventReader<CursorMoved>,
     mut cursor_position: ResMut<CursorPosition>,
@@ -25,7 +23,7 @@ fn update_cursor_pos(
     if let Some(cursor_moved) = cursor_moved_events.iter().last() {
         for (camera_transform, camera) in &camera_query {
             *cursor_position = CursorPosition(cursor_position_in_world(
-                &windows,
+                primary_window.single(),
                 cursor_moved.position,
                 camera_transform,
                 camera,
@@ -69,85 +67,58 @@ fn serve_button_pressed(paddle_inputs: Res<PaddleInputs>) -> bool {
     paddle_inputs[0].serve
 }
 
+#[derive(SystemSet, Hash, PartialEq, Eq, Clone, Debug)]
+struct BallMovement;
+
+fn game_finished(state: Res<State<BreakoutState>>) -> bool {
+    state.0 == BreakoutState::Finished
+}
+
 pub(crate) struct LocalPlugin;
 
 impl Plugin for LocalPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(CursorPosition(Vec3::ZERO))
             .insert_resource(PaddleInputs(vec![default()]));
-        app.add_system(
-            update_cursor_pos
-                .run_in_state(GameState::Ingame)
-                .before(GameloopStage::Input),
-        )
-        .add_system(
-            mouse_input
-                .run_in_state(GameState::Ingame)
-                .label(GameloopStage::Input),
-        )
-        .add_system(
-            paddle_movement
-                .run_in_state(GameState::Ingame)
-                .run_not_in_state(BreakoutState::Finished)
-                .after(GameloopStage::Input)
-                .label(GameloopStage::PaddleMovement),
-        )
-        .add_system(
-            serve
-                .run_in_state(GameState::Ingame)
-                .run_in_state(BreakoutState::Serve)
-                .run_if(serve_button_pressed)
-                .after(GameloopStage::PaddleMovement)
-                .label(GameloopStage::Serve),
-        )
-        .add_system(
-            restart_game
-                .run_in_state(GameState::Ingame)
-                .run_in_state(BreakoutState::Finished)
-                .run_if(left_mouse_button_just_pressed),
-        )
-        .add_system(
-            start_serve
-                .run_in_state(GameState::Ingame)
-                .run_in_state(BreakoutState::Start)
-                .run_if_not(left_mouse_button_pressed),
-        )
-        .add_system(
-            finish_game
-                .run_in_state(GameState::Ingame)
-                .run_in_state(BreakoutState::Playing)
-                .run_if(bricks_cleared),
-        );
+        app.add_system(update_cursor_pos.before(mouse_input))
+            .add_system(mouse_input)
+            .add_system(
+                paddle_movement
+                    .run_if(not(game_finished))
+                    .after(mouse_input),
+            )
+            .add_system(
+                serve
+                    .in_set(OnUpdate(BreakoutState::Serve))
+                    .run_if(serve_button_pressed)
+                    .after(paddle_movement),
+            )
+            .add_system(
+                restart_game
+                    .in_set(OnUpdate(BreakoutState::Finished))
+                    .run_if(left_mouse_button_just_pressed),
+            )
+            .add_system(
+                start_serve
+                    .in_set(OnUpdate(BreakoutState::Start))
+                    .run_if(not(left_mouse_button_pressed)),
+            )
+            .add_system(
+                finish_game
+                    .in_set(OnUpdate(BreakoutState::Playing))
+                    .run_if(bricks_cleared),
+            );
 
-        let timestep_label = &"fixed_timestep";
-        app.add_fixed_timestep(Duration::from_millis(1), timestep_label)
-            .add_fixed_timestep_system(
-                timestep_label,
-                0,
-                ball_movement
-                    .run_in_state(GameState::Ingame)
-                    .run_in_state(BreakoutState::Playing)
-                    .label(GameloopStage::BallMovement),
-            )
-            .add_fixed_timestep_system(
-                timestep_label,
-                0,
-                lives
-                    .run_in_state(GameState::Ingame)
-                    .run_in_state(BreakoutState::Playing)
-                    .run_on_event::<BottomCollisionEvent>()
-                    .after(GameloopStage::BallMovement)
-                    .label(GameloopStage::Scoring),
-            )
-            .add_fixed_timestep_system(
-                timestep_label,
-                0,
-                brick_collision
-                    .run_in_state(GameState::Ingame)
-                    .run_in_state(BreakoutState::Playing)
-                    .run_on_event::<BrickCollisionEvent>()
-                    .after(GameloopStage::BallMovement)
-                    .label(GameloopStage::Scoring),
+        app.insert_resource(FixedTime::new(Duration::from_millis(1)))
+            .add_systems(
+                (
+                    ball_movement.in_set(OnUpdate(BreakoutState::Playing)),
+                    lives.run_if(on_event::<BottomCollisionEvent>()),
+                    brick_collision.run_if(on_event::<BrickCollisionEvent>()),
+                    apply_system_buffers,
+                )
+                    .chain()
+                    .in_schedule(CoreSchedule::FixedUpdate),
             );
     }
 }
